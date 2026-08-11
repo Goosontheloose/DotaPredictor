@@ -7,7 +7,7 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="AEGIS ORACLE: SHANGHAI 2026", layout="wide")
 
-# THE EXACT 16 TEAMS FROM YOUR LIST
+# THE EXACT 16 TEAMS
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
     "BoomBoys", "OG", "Team Vision", "Resilience",
@@ -30,23 +30,58 @@ def load_data():
         res = conn.read(worksheet="Results", ttl=0)
         return subs, res
     except:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(columns=["Timestamp", "Oracle Name", "Rankings"]), pd.DataFrame(columns=["Team", "Rank"])
 
 subs_df, res_df = load_data()
 
-# --- UI STYLING ---
-st.markdown("""
+# --- SHANGHAI SHADOW-TECH UI STYLING ---
+st.markdown(f"""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #FF4B4B; color: white; font-weight: bold; }
-    .team-card { 
-        display: flex; align-items: center; padding: 10px; 
-        background: white; border: 1px solid #eee; border-radius: 8px; margin-bottom: 5px;
-    }
-    .rank-badge {
-        background: #00F5FF; color: black; font-weight: bold;
-        padding: 2px 8px; border-radius: 4px; margin-right: 15px; min-width: 35px; text-align: center;
-    }
+    .stApp {{
+        background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+        color: #c9d1d9;
+    }}
+    [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
+    
+    /* Navigation Tabs */
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 24px;
+        background-color: transparent;
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        height: 50px;
+        background-color: transparent !important;
+        border: none !important;
+        color: #8b949e !important;
+        font-weight: 600;
+    }}
+    .stTabs [aria-selected="true"] {{
+        color: #00F5FF !important;
+        border-bottom: 2px solid #00F5FF !important;
+    }}
+
+    /* Team Cards */
+    .team-card {{ 
+        display: flex; align-items: center; padding: 12px 16px; 
+        background: rgba(255, 255, 255, 0.05); 
+        border: 1px solid rgba(0, 245, 255, 0.1); 
+        border-radius: 12px; margin-bottom: 8px;
+        transition: transform 0.2s ease;
+    }}
+    .team-card:hover {{ border: 1px solid #00F5FF; transform: translateX(5px); }}
+    
+    .rank-badge {{
+        background: linear-gradient(90deg, #00F5FF, #00D1FF);
+        color: #0d1117; font-weight: 800;
+        padding: 4px 10px; border-radius: 6px; margin-right: 20px; 
+        min-width: 45px; text-align: center; font-family: monospace;
+    }}
+    
+    .stButton>button {{
+        background: linear-gradient(90deg, #FF4B4B, #D10000);
+        color: white; border: none; font-weight: 800; border-radius: 8px;
+        height: 3.5em; text-transform: uppercase; letter-spacing: 1px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -54,53 +89,60 @@ tab1, tab2, tab3, tab4 = st.tabs(["LOCK IN", "LEADERBOARD", "MATRIX", "PROTOCOL"
 
 # --- TAB 1: LOCK IN ---
 with tab1:
-    st.title("🔮 THE SHANGHAI PROPHECY")
-    col1, col2 = st.columns([1, 1])
+    st.markdown("<h1 style='text-align: center; color: #00F5FF; letter-spacing: 2px;'>🔮 SHANGHAI ORACLE PROTOCOL</h1>", unsafe_allow_html=True)
+    st.write("---")
+    
+    col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
-        st.subheader("1. Arrange Your Ranks")
-        st.caption("Drag and drop teams from 1st (Top) to 16th (Bottom).")
-        sorted_list = sort_items(TEAMS, direction="vertical", key="prophecy_ranker_final_v5")
+        st.markdown("### <span style='color:#00F5FF'>01</span> REORDER BRACKET", unsafe_allow_html=True)
+        st.caption("Drag teams to your predicted finishing positions (1-16).")
         
-        oracle_name = st.text_input("Oracle Name", placeholder="Enter your handle...")
+        # Bidirectional sortable list
+        current_order = sort_items(TEAMS, direction="vertical", key="shanghai_v6_final")
+        
+        st.write("---")
+        oracle_name = st.text_input("ORACLE IDENTIFIER", placeholder="Enter your name or handle...")
         
         if st.button("LOCK IN PROPHECY"):
             if not oracle_name:
-                st.error("Please enter an Oracle Name.")
+                st.warning("Identity required to secure prophecy.")
             else:
-                new_data = pd.DataFrame([{
+                new_entry = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "Oracle Name": oracle_name,
-                    "Rankings": ", ".join(sorted_list)
+                    "Rankings": ", ".join(current_order)
                 }])
-                updated_df = pd.concat([subs_df, new_data], ignore_index=True)
+                updated_df = pd.concat([subs_df, new_entry], ignore_index=True)
                 conn.update(worksheet="Submissions", data=updated_df)
-                st.success(f"Prophecy Recorded, {oracle_name}!")
+                st.success(f"Prophecy Encrypted. Welcome, {oracle_name}.")
                 st.cache_data.clear()
 
     with col2:
-        st.subheader("2. Prophecy Preview")
-        for i, team in enumerate(sorted_list):
+        st.markdown("### <span style='color:#00F5FF'>02</span> PROPHECY RECEIPT", unsafe_allow_html=True)
+        # Dynamic preview based on the current drag-and-drop state
+        for i, team in enumerate(current_order):
             st.markdown(f"""
                 <div class="team-card">
-                    <span class="rank-badge">#{i+1}</span>
-                    <img src="{get_logo(team)}" width="30" style="margin-right:15px;" onerror="this.src='https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/Aegis.png'">
-                    <span style="font-weight:600; color:#1f2937;">{team}</span>
+                    <span class="rank-badge">RANK {i+1}</span>
+                    <img src="{get_logo(team)}" width="35" style="margin-right:18px;" onerror="this.src='https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/Aegis.png'">
+                    <span style="font-weight:600; color:#e0e0e0; font-size:1.1em;">{team}</span>
                 </div>
             """, unsafe_allow_html=True)
 
 # --- TAB 2: LEADERBOARD ---
 with tab2:
-    st.header("🏆 ORACLE STANDINGS")
+    st.markdown("<h2 style='color:#00F5FF'>🏆 GLOBAL LEADERBOARD</h2>", unsafe_allow_html=True)
     if subs_df.empty or "Oracle Name" not in subs_df.columns:
-        st.info("The Vault is empty.")
+        st.info("The Oracle Vault is sealed. Be the first to submit.")
     else:
+        # Business logic for scoring
         latest_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        leaderboard = []
+        leaderboard_rows = []
         for _, row in latest_subs.iterrows():
             pred_list = row["Rankings"].split(", ")
-            total_penalty = 0
-            perfect_picks = 0
+            penalty = 0
+            perfects = 0
             if not res_df.empty and "Team" in res_df.columns:
                 for rank, team in enumerate(pred_list, 1):
                     off_row = res_df[res_df["Team"] == team]
@@ -109,30 +151,44 @@ with tab2:
                         if off_rank > 0:
                             dist = abs(rank - off_rank)
                             mult = 4 if rank == 1 else (3 if rank == 2 else (2 if rank in [3, 4] else 1))
-                            total_penalty += (dist * mult)
-                            if dist == 0: perfect_picks += 1
-            leaderboard.append({"Oracle": row["Oracle Name"], "Penalty Score": total_penalty, "Perfect Picks": perfect_picks})
+                            penalty += (dist * mult)
+                            if dist == 0: perfects += 1
+            leaderboard_rows.append({"Oracle": row["Oracle Name"], "Penalty": penalty, "Bullseyes": perfects})
         
-        st.table(pd.DataFrame(leaderboard).sort_values(["Penalty Score", "Perfect Picks"], ascending=[True, False]))
+        lb_final = pd.DataFrame(leaderboard_rows).sort_values(["Penalty", "Bullseyes"], ascending=[True, False])
+        st.dataframe(lb_final, use_container_width=True)
 
 # --- TAB 3: MATRIX ---
 with tab3:
-    st.header("📊 PREDICTION MATRIX")
+    st.markdown("<h2 style='color:#00F5FF'>📊 COMPARISON MATRIX</h2>", unsafe_allow_html=True)
     if not subs_df.empty:
         matrix_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        matrix_rows = []
+        matrix_data = []
         for _, row in matrix_subs.iterrows():
             ranks = row["Rankings"].split(", ")
             entry = {"Oracle": row["Oracle Name"]}
             for i, t in enumerate(ranks): entry[f"#{i+1}"] = t
-            matrix_rows.append(entry)
-        st.dataframe(pd.DataFrame(matrix_rows))
+            matrix_data.append(entry)
+        st.dataframe(pd.DataFrame(matrix_data), use_container_width=True)
 
 # --- TAB 4: PROTOCOL ---
 with tab4:
-    st.header("📜 THE ORACLE PROTOCOL")
-    st.markdown("""
-    **The Penalty:** `ABS(Predicted - Actual) x Multiplier`
-    - **1st:** 4x | **2nd:** 3x | **3rd/4th:** 2x | **Others:** 1x
-    - **Tie-Breaker:** Most Perfect Picks wins.
-    """)
+    st.markdown("<h2 style='color:#00F5FF'>📜 ORACLE CALCULATION RULES</h2>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.info("**SCORING:** Lower points = Higher rank.")
+        st.markdown("""
+        **Penalty Calculation:**
+        - Distance from Actual x Multiplier.
+        - **1st Place Pick:** 4x Penalty
+        - **2nd Place Pick:** 3x Penalty
+        - **3rd/4th Place Pick:** 2x Penalty
+        - **All Others:** 1x Penalty
+        """)
+    with c2:
+        st.info("**TIES:** Resolved by 'Bullseyes'.")
+        st.markdown("""
+        **Tie-Breaking Priority:**
+        1. Total exact rank matches (Bullseyes).
+        2. Lowest penalty in the Top 4 bracket.
+        """)
