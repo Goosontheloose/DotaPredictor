@@ -136,11 +136,3 @@ with tab3:
         st.dataframe(m_df, use_container_width=True)
     else:
         st.write("Matrix awaiting data.")
-
-# --- DIAGNOSTIC FOOTER ---
-with st.expander("System Status"):
-    if res_df is None:
-        st.error("❌ Connection Failed: Check Sheet Tabs & Permissions")
-    else:
-        st.success("✅ Database Online")
-        st.write(f"Last API Sync: {datetime.now().strftime('%H:%M:%S')}")
