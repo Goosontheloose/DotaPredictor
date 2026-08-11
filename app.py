@@ -58,7 +58,7 @@ except Exception as e:
 # --- HEADER SECTION ---
 col1, col2 = st.columns([2, 1])
 with col1:
-    st.title("🏮 AEGIS ORACLE: SHANGHAI 2026")
+    st.title("🏮 The International 2026")
     st.caption("ULTIMATE TOURNAMENT PREDICTION TERMINAL")
 
 with col2:
@@ -67,7 +67,7 @@ with col2:
         st.metric("TOURNAMENT PROGRESS", f"{locked_count}/16 LOCKED")
 
 # --- MAIN INTERFACE ---
-tab1, tab2, tab3 = st.tabs(["🏆 ORACLE LEADERBOARD", "📋 PREDICTOR STANDINGS", "🛠 ARBITER VIEW"])
+tab1, tab2, tab3 = st.tabs(["🏆 LEADERBOARD", "📋 PREDICTOR STANDINGS", "🛠 ARBITER VIEW"])
 
 with tab1:
     st.subheader("CURRENT SCOREBOARD")
@@ -120,22 +120,45 @@ with tab3:
 with st.sidebar:
     st.header("LOCK IN PROPHECY")
     with st.form("oracle_submission"):
-        oracle_name = st.text_input("Name (e.g., Ruben, Stok, Frederik)")
-        # Get list of teams from Results tab
-        team_pool = results_df['Team'].tolist() if not results_df.empty else []
-        ranked_selection = st.multiselect("Select Teams in order (1st to 16th)", team_pool)
+        oracle_name = st.text_input("Oracle Name (e.g., Ruben)")
         
-        if st.form_submit_button("LOCK IN"):
-            if len(ranked_selection) == 16 and oracle_name:
-                new_sub = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ",".join(ranked_selection)
-                }])
-                # Append to existing
-                updated_subs = pd.concat([subs_df, new_sub], ignore_index=True)
-                conn.update(worksheet="Submissions", data=updated_subs)
-                st.success("Prophecy encrypted and stored.")
-                st.rerun()
-            else:
-                st.error("You must rank all 16 teams.")
+        team_pool = results_df['Team'].tolist() if not results_df.empty else []
+        
+        # The multiselect captures the order of selection
+        ranked_selection = st.multiselect(
+            "Select Teams in order (1st to 16th):", 
+            options=team_pool,
+            help="The order you click them determines their rank!"
+        )
+        
+        # --- DYNAMIC RANKING PREVIEW ---
+        if ranked_selection:
+            st.markdown("---")
+            st.markdown("### 🔮 PREVIEW")
+            for i, team in enumerate(ranked_selection):
+                # This adds the 1-16 next to the name in the preview
+                st.write(f"**Rank {i+1}:** {team}")
+            st.markdown(f"**Progress:** {len(ranked_selection)}/16")
+            st.markdown("---")
+
+        submit_ready = len(ranked_selection) == 16 and oracle_name
+        
+        if st.form_submit_button("LOCK IN PROPHECY", disabled=not submit_ready):
+            new_sub = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Oracle Name": oracle_name,
+                "Rankings": ",".join(ranked_selection)
+            }])
+            
+            # Append to existing submissions
+            updated_subs = pd.concat([subs_df, new_sub], ignore_index=True)
+            conn.update(worksheet="Submissions", data=updated_subs)
+            
+            st.success(f"Prophecy for {oracle_name} encrypted!")
+            st.balloons()
+            st.rerun()
+
+    if not oracle_name:
+        st.warning("Enter an Oracle Name to begin.")
+    elif len(ranked_selection) < 16:
+        st.info(f"Please select {16 - len(ranked_selection)} more teams.")
