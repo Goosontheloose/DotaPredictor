@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-from streamlit_sortables import sort_items
+import streamlit.components.v1 as components
+import json
 from datetime import datetime
 
 # --- CONFIGURATION ---
@@ -9,7 +10,7 @@ GITHUB_USER = "Goosontheloose"
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 
-# Finalized 16-Team Roster for 2026
+# Your Exact Team List
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
     "BoomBoys", "OG", "Team Vision", "Resilience",
@@ -19,26 +20,7 @@ TEAMS = [
 
 st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
 
-# --- UI STYLING ---
-st.markdown(f"""
-    <style>
-    .header-container {{ display: flex; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
-    .preview-card {{ background: #fdfdfd; padding: 15px; border-radius: 10px; border: 1px solid #eee; position: sticky; top: 20px; }}
-    .team-row-mini {{ display: flex; align-items: center; gap: 10px; padding: 5px; border-bottom: 1px solid #f0f0f0; font-size: 0.92em; }}
-    .rank-num {{ font-weight: bold; color: #555; min-width: 25px; }}
-    .rule-card {{ background: #ffffff; padding: 20px; border-radius: 8px; border-left: 5px solid #00FF9D; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
-    .multiplier-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-    .multiplier-table th, .multiplier-table td {{ padding: 10px; border: 1px solid #eee; text-align: left; }}
-    .multiplier-table th {{ background-color: #fafafa; }}
-    </style>
-""", unsafe_allow_html=True)
-
-def get_logo_url(team_name):
-    # Fix for Nigma Galaxy filename
-    fn = "Nigma" if team_name == "Nigma Galaxy" else team_name
-    return f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{fn.replace(' ', '%20')}.png"
-
-# --- DATA ENGINE ---
+# --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
@@ -52,66 +34,106 @@ def load_data():
 
 results_df, subs_df = load_data()
 
-# --- HEADER ---
-st.markdown(f"""
-    <div class="header-container">
-        <img src="{get_logo_url('Aegis')}" width="50" height="50" onerror="this.src='https://img.icons8.com/ios-filled/50/000000/shield.png'">
-        <h1 style="margin:0;">AEGIS ORACLE: SHANGHAI 2026</h1>
+# --- LOGO HELPER ---
+def get_logo_url(name):
+    return f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{name.replace(' ', '%20')}.png"
+
+# --- CUSTOM UNIFIED DRAGGABLE INTERFACE (HTML/JS) ---
+def unified_prediction_ui(team_list):
+    # Prepare data for JavaScript
+    items_json = json.dumps([{"name": t, "logo": get_logo_url(t)} for t in team_list])
+    
+    html_code = f"""
+    <div id="drag-container" style="font-family: sans-serif; max-width: 500px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <ul id="sortable-list" style="list-style: none; padding: 0; margin: 0;"></ul>
     </div>
-""", unsafe_allow_html=True)
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script>
+        const teams = {items_json};
+        const listElement = document.getElementById('sortable-list');
+
+        function render() {{
+            listElement.innerHTML = '';
+            teams.forEach((team, index) => {{
+                const li = document.createElement('li');
+                li.setAttribute('data-id', team.name);
+                li.style = "display: flex; align-items: center; background: white; margin-bottom: 8px; padding: 10px; border-radius: 6px; border: 1px solid #eee; cursor: grab; box-shadow: 0 2px 4px rgba(0,0,0,0.05);";
+                li.innerHTML = `
+                    <span style="font-weight: bold; color: #888; width: 30px;">#$#{{index + 1}}</span>
+                    <img src="$#{{team.logo}}" style="width: 24px; height: 24px; margin-right: 12px; object-fit: contain;" onerror="this.style.visibility='hidden'">
+                    <span style="font-weight: 500; color: #333;">$#{{team.name}}</span>
+                `;
+                listElement.appendChild(li);
+            }});
+        }}
+
+        render();
+
+        const sortable = new Sortable(listElement, {{
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: function() {{
+                const newOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
+                window.parent.postMessage({{
+                    type: 'streamlit:setComponentValue',
+                    value: newOrder
+                }}, '*');
+                
+                // Update rank numbers visually immediately
+                Array.from(listElement.children).forEach((li, idx) => {{
+                    li.querySelector('span').innerText = '#' + (idx + 1);
+                }});
+            }}
+        }});
+    </script>
+    <style>
+        .sortable-ghost {{ opacity: 0.4; background: #e0e0e0; }}
+    </style>
+    """
+    # Streamlit component to bridge JS and Python
+    return components.html(html_code.replace('$#', '$'), height=750, scrolling=True)
+
+# --- APP LAYOUT ---
+st.title("AEGIS ORACLE: SHANGHAI 2026")
 
 tabs = st.tabs(["🔮 LOCK-IN", "📊 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
-# --- TAB 1: LOCK-IN (FIXED TERMINOLOGY) ---
+# --- TAB 1: UNIFIED LOCK-IN ---
 with tabs[0]:
-    col_input, col_preview = st.columns([1, 1])
+    st.subheader("Your Prophecy")
+    oracle_name = st.text_input("Oracle Name", placeholder="Enter your name to begin...")
     
-    with col_input:
-        st.subheader("Finalize Your Prophecy")
-        oracle_name = st.text_input("Oracle Name", placeholder="Enter your name...")
-        st.info("Drag and drop teams to set your 1-16 predicted ranking. Rank #1 is at the top.")
-        
-        # sort_items for the interactive drag-and-drop
-        current_ranking = sort_items(TEAMS, direction="vertical", key="oracle_sort_v3")
-        
-        if st.button("LOCK IN PROPHECY", use_container_width=True, type="primary"):
-            if not oracle_name:
-                st.error("Identification required. Please enter an Oracle Name.")
-            else:
-                new_row = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ",".join(current_ranking)
-                }])
-                # Append logic: concatenates new row to existing data
-                updated_subs = pd.concat([subs_df, new_row], ignore_index=True)
-                conn.create(worksheet="Submissions", data=updated_subs)
-                st.success(f"Prophecy locked for {oracle_name}!")
-                st.balloons()
-                st.cache_data.clear()
-
-    with col_preview:
-        # Corrected title: Now reflects that these are predictions
-        st.markdown('<div class="preview-card">', unsafe_allow_html=True)
-        st.subheader("Prophecy Preview")
-        for i, team in enumerate(current_ranking):
-            st.markdown(f"""
-                <div class="team-row-mini">
-                    <span class="rank-num">#{i+1}</span>
-                    <img src="{get_logo_url(team)}" width="22" height="22" onerror="this.style.display='none'">
-                    <span>{team}</span>
-                </div>
-            """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.write("Drag teams to set your final 1-16 ranking:")
+    # This renders the single unified column
+    user_order = unified_prediction_ui(TEAMS)
+    
+    # Logic to handle the submission
+    if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
+        if not oracle_name:
+            st.error("Please enter your Oracle Name.")
+        elif not user_order:
+            st.warning("Move at least one team to initialize the order.")
+        else:
+            new_row = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Oracle Name": oracle_name,
+                "Rankings": ",".join(user_order)
+            }])
+            updated_subs = pd.concat([subs_df, new_row], ignore_index=True)
+            conn.create(worksheet="Submissions", data=updated_subs)
+            st.success(f"Prophecy saved for {oracle_name}!")
+            st.balloons()
+            st.cache_data.clear()
 
 # --- TAB 2: LEADERBOARD ---
 with tabs[1]:
     if results_df.empty or "Rank" not in results_df.columns:
-        st.info("Awaiting official tournament results. Standings will update automatically.")
+        st.info("Awaiting official results. Standings will update when the tournament begins.")
     elif subs_df.empty:
         st.warning("No prophecies found.")
     else:
-        # Deduplicate: Keep only the latest submission for each name
+        # Append-only deduplication
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         leaderboard = []
@@ -135,58 +157,28 @@ with tabs[1]:
 with tabs[2]:
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        matrix_list = []
+        matrix_data = []
         for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
             entry = {"Oracle": row['Oracle Name']}
             for i, team in enumerate(preds):
                 entry[f"#{i+1}"] = team
-            matrix_list.append(entry)
-        st.dataframe(pd.DataFrame(matrix_list), use_container_width=True, hide_index=True)
+            matrix_data.append(entry)
+        st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True)
 
 # --- TAB 4: PROTOCOL ---
 with tabs[3]:
     st.markdown("### Aegis Oracle: The Scoring Protocol")
+    st.markdown("""
+    **1. The Core Logic**
+    Golf Scoring: Lowest score wins. |Predicted Rank - Official Rank| × Multiplier = Penalty points.
     
-    st.markdown("""
-    <div class="rule-card">
-        <h4>1. The Core Logic</h4>
-        <p>This is a <b>Golf Scoring</b> system: the lowest score wins. You earn "Penalty Points" based on how far your prediction is from the final tournament result.</p>
-        <p><b>Formula:</b> <code>|Predicted Rank - Official Rank| × Multiplier = Penalty</code></p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="rule-card">
-        <h4>2. High-Stakes Multipliers</h4>
-        <p>Incorrectly predicting the top of the bracket is more costly than missing the bottom. Multipliers are applied based on your <b>Predicted</b> rank.</p>
-        <table class="multiplier-table">
-            <tr><th>Predicted Rank</th><th>Multiplier</th><th>Risk Level</th></tr>
-            <tr><td>#1 (Champion)</td><td>4x</td><td>EXTREME</td></tr>
-            <tr><td>#2 (Runner-Up)</td><td>3x</td><td>HIGH</td></tr>
-            <tr><td>#3 - #4</td><td>2x</td><td>MODERATE</td></tr>
-            <tr><td>#5 - #16</td><td>1x</td><td>STANDARD</td></tr>
-        </table>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="rule-card">
-        <h4>3. Tied Rank Logic (Lowest Rank Wins)</h4>
-        <p>Dota 2 tournaments often have shared tiers (e.g., 5th-6th or 9th-12th). For scoring, we use the <b>best possible rank</b> in that tier.</p>
-        <ul>
-            <li>If a team finishes 5th-6th, their official rank is <b>5</b>.</li>
-            <li>If a team finishes 13th-16th, their official rank is <b>13</b>.</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="rule-card">
-        <h4>4. Fixed vs. Projected Scoring</h4>
-        <p><b>Projected:</b> While the tournament is live, active teams are assigned a rank based on their current floor. Your score will fluctuate as teams are eliminated.</p>
-        <p><b>Fixed:</b> Once a team is officially eliminated and their position is locked, their contribution to your score becomes permanent.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.info("**Example Calculation:** You predict Team Liquid at #1 (4x multiplier). They finish #5. Penalty = |1 - 5| * 4 = 16 points.")
+    **2. High-Stakes Multipliers**
+    - #1 (Champion): **4x** Multiplier
+    - #2 (Runner-Up): **3x** Multiplier
+    - #3 - #4: **2x** Multiplier
+    - #5 - #16: **1x** Multiplier
+    
+    **3. Tied Rank Logic**
+    Tied tiers (e.g., 5th-6th) use the best possible rank in that tier (Rank 5).
+    """)
