@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_sortables import sort_items
 import pandas as pd
-from streamlit_gsheets_connection import GSheetsConnection
+from streamlit_gsheets import GSheetsConnection
 import datetime
 
 # --- CONFIG & STYLING ---
