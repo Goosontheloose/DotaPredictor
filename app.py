@@ -9,11 +9,12 @@ GITHUB_USER = "Goosontheloose"
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 
+# Finalized 16-Team Roster
 TEAMS = [
-    "Falcons", "LGD", "Iron Wing", "Nigma",
-    "BoomBoys", "OG", "Team Vision", "Resilience",
-    "Spirit", "Xtreme", "Liquid", "Vigi",
-    "Aurora", "GamerLegion", "Yandex", "Huligani"
+    "Team Falcons", "LGD Gaming", "Iron Wing", "Nigma Galaxy",
+    "BoomBoys", "OG", "TEAM VISION", "Team Resilience",
+    "Team Spirit", "Xtreme Gaming", "Team Liquid", "Vigi Gaming",
+    "Aurora Gaming", "GamerLegion", "Team Yandex", "huligani"
 ]
 
 st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
@@ -22,7 +23,13 @@ st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
 st.markdown(f"""
     <style>
     .header-container {{ display: flex; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
-    .protocol-card {{ background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.02); margin-bottom: 20px; }}
+    .preview-card {{ background: #fdfdfd; padding: 15px; border-radius: 10px; border: 1px solid #eee; position: sticky; top: 20px; }}
+    .team-row-mini {{ display: flex; align-items: center; gap: 10px; padding: 5px; border-bottom: 1px solid #f0f0f0; font-size: 0.9em; }}
+    .rank-num {{ font-weight: bold; color: #555; min-width: 25px; }}
+    .rule-card {{ background: #ffffff; padding: 20px; border-radius: 8px; border-left: 5px solid #00FF9D; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+    .multiplier-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+    .multiplier-table th, .multiplier-table td {{ padding: 10px; border: 1px solid #eee; text-align: left; }}
+    .multiplier-table th {{ background-color: #fafafa; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -36,9 +43,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 @st.cache_data(ttl=60)
 def load_data():
     try:
-        res = conn.read(worksheet="Results")
-        sub = conn.read(worksheet="Submissions")
-        return res.dropna(how='all'), sub.dropna(how='all')
+        res = conn.read(worksheet="Results").dropna(how='all')
+        sub = conn.read(worksheet="Submissions").dropna(how='all')
+        return res, sub
     except:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -54,43 +61,57 @@ st.markdown(f"""
 
 tabs = st.tabs(["🔮 LOCK-IN", "📊 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
-# --- TAB 1: LOCK-IN (DRAG & DROP RESTORED) ---
+# --- TAB 1: LOCK-IN (RESTORED DRAG & DROP) ---
 with tabs[0]:
-    st.subheader("Finalize Your Prophecy")
-    oracle_name = st.text_input("Enter Oracle Name", placeholder="e.g. Arteezy Fan #1")
-    
-    st.info("Drag and drop teams to set your 1-16 ranking.")
-    
-    # Drag and Drop Component
-    sorted_teams = sort_items(TEAMS, direction="vertical")
-    
-    if st.button("LOCK IN RANKINGS", use_container_width=True):
-        if not oracle_name:
-            st.error("Please enter an Oracle Name before locking in.")
-        else:
-            # Prepare new entry
-            new_entry = pd.DataFrame([{
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "Oracle Name": oracle_name,
-                "Rankings": ",".join(sorted_teams)
-            }])
-            
-            # Write ONLY the new entry to the sheet (prevents duplicate name bug)
-            conn.create(worksheet="Submissions", data=pd.concat([subs_df, new_entry], ignore_index=True))
-            st.success(f"Prophecy for {oracle_name} has been etched in the stars!")
-            st.balloons()
-            st.cache_data.clear() # Refresh data for the leaderboard
+    col_input, col_preview = st.columns([1, 1])
+    with col_input:
+        st.subheader("Finalize Your Prophecy")
+        oracle_name = st.text_input("Oracle Name", placeholder="Enter your name...")
+        st.info("Drag and drop teams to set your 1-16 ranking. Rank #1 is at the top.")
+        
+        current_ranking = sort_items(TEAMS, direction="vertical")
+        
+        if st.button("LOCK IN PROPHECY", use_container_width=True, type="primary"):
+            if not oracle_name:
+                st.error("Identification required. Please enter an Oracle Name.")
+            else:
+                new_data = pd.DataFrame([{
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Oracle Name": oracle_name,
+                    "Rankings": ",".join(current_ranking)
+                }])
+                # Append logic prevents the old name "resurrection" bug
+                conn.create(worksheet="Submissions", data=pd.concat([subs_df, new_data], ignore_index=True))
+                st.success(f"Prophecy etched for {oracle_name}!")
+                st.balloons()
+                st.cache_data.clear()
+
+    with col_preview:
+        st.markdown('<div class="preview-card">', unsafe_allow_html=True)
+        st.subheader("Live Standings Preview")
+        for i, team in enumerate(current_ranking):
+            st.markdown(f"""
+                <div class="team-row-mini">
+                    <span class="rank-num">#{i+1}</span>
+                    <img src="{get_logo_url(team)}" width="22" height="22" onerror="this.style.display='none'">
+                    <span>{team}</span>
+                </div>
+            """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- TAB 2: LEADERBOARD ---
 with tabs[1]:
     if results_df.empty or "Rank" not in results_df.columns:
-        st.info("Leaderboard is offline until the Grand Arbiter updates official results.")
+        st.info("Awaiting tournament start. Leaderboard in standby.")
     elif subs_df.empty:
         st.warning("No prophecies found.")
     else:
+        # Deduplicate: Only use the latest submission for each person
+        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         leaderboard = []
-        for _, row in subs_df.iterrows():
+        
+        for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
             score, perfect = 0, 0
             for i, team in enumerate(preds):
@@ -107,8 +128,9 @@ with tabs[1]:
 # --- TAB 3: MATRIX ---
 with tabs[2]:
     if not subs_df.empty:
+        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         matrix_data = []
-        for _, row in subs_df.iterrows():
+        for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
             entry = {"Oracle": row['Oracle Name']}
             for i, team in enumerate(preds):
@@ -116,18 +138,49 @@ with tabs[2]:
             matrix_data.append(entry)
         st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True)
 
-# --- TAB 4: PROTOCOL ---
+# --- TAB 4: PROTOCOL (FULL RESTORATION) ---
 with tabs[3]:
+    st.markdown("### Aegis Oracle: The Scoring Protocol")
+    
     st.markdown("""
-    <div class="protocol-card">
-        <h3>Scoring Protocol</h3>
-        <p>Penalty = <code>|Predicted - Actual| × Multiplier</code></p>
-        <ul>
-            <li><b>Rank 1:</b> 4x Penalty</li>
-            <li><b>Rank 2:</b> 3x Penalty</li>
-            <li><b>Rank 3-4:</b> 2x Penalty</li>
-            <li><b>Others:</b> 1x Penalty</li>
-        </ul>
-        <p><i>Note: Shared tiers (e.g., 5th-6th) are assigned the best rank (5).</i></p>
+    <div class="rule-card">
+        <h4>1. The Core Logic</h4>
+        <p>This is a <b>Golf Scoring</b> system: the lowest score wins. You earn "Penalty Points" based on how far your prediction is from the final tournament result.</p>
+        <p><b>Formula:</b> <code>|Predicted Rank - Official Rank| × Multiplier = Penalty</code></p>
     </div>
     """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="rule-card">
+        <h4>2. High-Stakes Multipliers</h4>
+        <p>Incorrectly predicting the top of the bracket is more costly than missing the bottom. Multipliers are applied based on your <b>Predicted</b> rank.</p>
+        <table class="multiplier-table">
+            <tr><th>Predicted Rank</th><th>Multiplier</th><th>Risk Level</th></tr>
+            <tr><td>#1 (Champion)</td><td>4x</td><td>EXTREME</td></tr>
+            <tr><td>#2 (Runner-Up)</td><td>3x</td><td>HIGH</td></tr>
+            <tr><td>#3 - #4</td><td>2x</td><td>MODERATE</td></tr>
+            <tr><td>#5 - #16</td><td>1x</td><td>STANDARD</td></tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="rule-card">
+        <h4>3. Tied Rank Logic (Lowest Rank Wins)</h4>
+        <p>Dota 2 tournaments often have shared tiers (e.g., 5th-6th or 9th-12th). For scoring, we use the <b>best possible rank</b> in that tier.</p>
+        <ul>
+            <li>If a team finishes 5th-6th, their official rank is <b>5</b>.</li>
+            <li>If a team finishes 13th-16th, their official rank is <b>13</b>.</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="rule-card">
+        <h4>4. Fixed vs. Projected Scoring</h4>
+        <p><b>Projected:</b> While the tournament is live, active teams are assigned a rank based on their current floor. Your score will fluctuate as teams are eliminated.</p>
+        <p><b>Fixed:</b> Once a team is officially eliminated and their position is locked, their contribution to your score becomes permanent.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info("**Example Calculation:** You predict Team Liquid at #1 (4x). They finish #5. Penalty = |1 - 5| * 4 = 16 points.")
