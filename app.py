@@ -9,57 +9,52 @@ st.set_page_config(page_title="AEGIS ORACLE", layout="centered", initial_sidebar
 
 st.markdown("""
     <style>
-    /* Mobile-First Typography */
     html, body, [class*="st-"] {
         font-family: 'Inter', sans-serif !important;
         background-color: #ffffff;
         color: #1f2328;
     }
     
-    /* Increase font size for mobile readability */
-    p, li, b, i, span, label {
-        font-size: 1.1rem !important;
-    }
+    [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; }
 
-    /* Stack everything vertically for narrow screens */
-    [data-testid="column"] {
-        width: 100% !important;
-        flex: 1 1 calc(100% - 1rem) !important;
+    /* Rules Styling */
+    .rules-header { 
+        color: #0969da; 
+        border-bottom: 2px solid #eaecef; 
+        padding-bottom: 10px; 
+        margin-top: 25px;
+        font-weight: 800;
     }
-
-    /* Professional Card Styling */
-    .protocol-card { 
-        background: #f6f8fa !important; 
-        padding: 18px; 
-        border-radius: 12px; 
-        border: 1px solid #d0d7de;
-        border-left: 8px solid #0969da !important; 
-        margin-bottom: 15px;
+    .rules-card { 
+        background: #f6f8fa; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid #d0d7de; 
+        margin-top: 10px;
     }
-    
-    /* Big Touch-Friendly Buttons */
+    .math-box {
+        font-family: monospace;
+        background: #fff8c5;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #f7e0a3;
+        font-weight: bold;
+    }
     .stButton>button {
         width: 100% !important;
         height: 3.5rem !important;
         background-color: #2da44e !important;
         color: white !important;
-        font-size: 1.2rem !important;
+        font-size: 1.1rem !important;
         border-radius: 10px !important;
         font-weight: 700;
-        margin-top: 10px;
     }
-
-    /* Team List Item Styling */
     .preview-row {
-        padding: 12px;
+        padding: 10px;
         border-bottom: 1px solid #f0f0f0;
         display: flex;
         align-items: center;
-        font-size: 1.1rem;
     }
-
-    .multiplier-tag { background: #dafbe1; color: #1a7f37; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold; }
-    .bonus-tag { background: #fff8c5; color: #9a6700; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -99,12 +94,8 @@ def get_score_metrics(pred_list, res_df):
         ar = actual_map.get(team, 0)
         if ar == 0: continue
         
-        # Bullseye Logic (-1 base for perfect)
-        if pr == ar:
-            base = -1
-            perfect_count += 1
-        else:
-            base = abs(pr - ar)
+        base = -1 if pr == ar else abs(pr - ar)
+        if pr == ar: perfect_count += 1
         
         mult = 4 if pr == 1 else 3 if pr == 2 else 2 if pr in [3, 4] else 1
         pts = base * mult
@@ -113,42 +104,33 @@ def get_score_metrics(pred_list, res_df):
         
     return f_score, p_score, perfect_count
 
-# --- APP FLOW ---
+# --- APP LAYOUT ---
 res, subs, logo_map = load_oracle_data()
 teams_list = ["Team Liquid", "Gaimin Gladiators", "Tundra Esports", "Team Falcons", "Xtreme Gaming", "Cloud9", "BetBoom Team", "Aurora", "Nouns", "Team Spirit", "HEROIC", "PSG Quest", "Team Zero", "1win", "MOUZ", "Talon Esports"]
 
-st.title("🏆 AEGIS ORACLE 2026")
+st.title("🏆 AEGIS ORACLE")
 tabs = st.tabs(["🔮 PICK", "📊 RANKS", "📑 MATRIX", "📜 RULES"])
 
 with tabs[0]:
-    o_name = st.text_input("ORACLE NAME", placeholder="Enter Name")
-    st.info("Drag teams to rank them (1 to 16)")
+    o_name = st.text_input("ORACLE NAME")
     sorted_ranks = sort_items(teams_list, direction='vertical')
-    
     if st.button("LOCK IN PREDICTIONS"):
         if o_name and save_prediction(o_name, sorted_ranks):
-            st.success("Prophecy Recorded!")
+            st.success("Locked!")
             st.balloons()
-        else:
-            st.error("Name required / Connection error.")
 
-    st.subheader("Your Current Order")
+    st.subheader("Current Selection")
     for i, t in enumerate(sorted_ranks):
         img = logo_map.get(t, "https://img.icons8.com/ios-filled/50/0969DA/shield.png")
-        st.markdown(f"""<div class='preview-row'><b>{i+1}.</b> &nbsp; <img src='{img}' width='24' style='margin-right:10px;'> {t}</div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class='preview-row'><b>{i+1}.</b> &nbsp; <img src='{img}' width='24'> &nbsp; {t}</div>""", unsafe_allow_html=True)
 
 with tabs[1]:
-    if res is not None:
-        st.subheader("Leaderboard")
+    if res is not None and subs is not None:
         rows = []
-        if subs is not None:
-            for _, r in subs.iterrows():
-                f, p, bull = get_score_metrics(r['Rankings'].split(','), res)
-                rows.append({"Oracle": r['Oracle Name'], "Perfect": bull, "Fixed": f, "Projected": p})
-            
-            # Sorted by Projected (Lower is better)
-            df_lb = pd.DataFrame(rows).sort_values("Projected")
-            st.dataframe(df_lb, use_container_width=True, hide_index=True)
+        for _, r in subs.iterrows():
+            f, p, bull = get_score_metrics(r['Rankings'].split(','), res)
+            rows.append({"Oracle": r['Oracle Name'], "Bullseyes": bull, "Fixed": f, "Projected": p})
+        st.dataframe(pd.DataFrame(rows).sort_values("Projected"), use_container_width=True, hide_index=True)
 
 with tabs[2]:
     if subs is not None:
@@ -156,16 +138,25 @@ with tabs[2]:
         st.dataframe(pd.DataFrame(m_data, index=[f"Rank {i+1}" for i in range(16)]), use_container_width=True)
 
 with tabs[3]:
-    st.markdown(f"""
-    <div class='protocol-card'>
-        <h3>🎯 The Bullseye</h3>
-        <p>Correct rank = <b>-1 base point</b>.</p>
-        <p>Correct #1 Pick = <span class='bonus-tag'>-4 TOTAL</span></p>
-    </div>
-    <div class='protocol-card'>
-        <h3>⛳ Golf Scoring</h3>
-        <p>Misses = Distance × Multiplier.</p>
-        <p>1st (4x), 2nd (3x), 3/4th (2x).</p>
-        <p><b>Lowest Score Wins.</b></p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<h2 class='rules-header'>1. SCORING SYSTEM</h2>", unsafe_allow_html=True)
+    st.write("This is a **Golf-Style** tournament: The lower your score, the better your rank.")
+    
+    st.markdown("<div class='rules-card'><b>🎯 THE BULLSEYE:</b><br>If a team finishes exactly where you predicted, you receive <b>-1 Base Point</b>.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='rules-card'><b>⛳ THE PENALTY:</b><br>If a team finishes elsewhere, you receive points equal to the <b>Absolute Distance</b> between your prediction and reality.</div>", unsafe_allow_html=True)
+
+    st.markdown("<h2 class='rules-header'>2. MULTIPLIERS</h2>", unsafe_allow_html=True)
+    st.write("The higher the rank you predict, the higher the stakes.")
+    st.table(pd.DataFrame({
+        "Predicted Rank": ["1st", "2nd", "3rd - 4th", "5th - 16th"],
+        "Multiplier": ["4x", "3x", "2x", "1x"]
+    }))
+
+    st.markdown("<h2 class='rules-header'>3. FIXED VS PROJECTED</h2>", unsafe_allow_html=True)
+    st.markdown("""
+    - **PROJECTED SCORE:** This is your 'Live' score. It treats every team's current standing as if the tournament ended right now.
+    - **FIXED SCORE:** This only counts points from teams that have been **officially eliminated** or declared the **winner**. This score will not change once a team is out.
+    - **BULLSEYES:** A count of how many teams you predicted perfectly.
+    """)
+
+    st.markdown("<h2 class='rules-header'>4. EXAMPLE CALCULATION</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='math-box'>Prediction: Team Spirit (1st) | Result: 3rd<br>Distance: 2 (1 to 3) | Multiplier: 4x<br>Total Penalty: 8 Points</div>", unsafe_allow_html=True)
