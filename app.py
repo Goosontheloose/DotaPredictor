@@ -1,15 +1,11 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import streamlit.components.v1 as components
-import json
+from streamlit_sortables import sort_items
 from datetime import datetime
 
 # --- CONFIGURATION ---
-GITHUB_USER = "Goosontheloose" 
-REPO_NAME = "DotaPredictor"
-BRANCH = "main"
-GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
+GITHUB_BASE = "https://raw.githubusercontent.com/Goosontheloose/DotaPredictor/main/"
 
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
@@ -34,67 +30,6 @@ def load_data():
 
 results_df, subs_df = load_data()
 
-# --- LOGO HELPER ---
-def get_logo_url(name):
-    return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
-
-# --- THE UNIFIED INTERFACE ---
-def unified_prediction_ui(team_list):
-    items_json = json.dumps([{"name": t, "logo": get_logo_url(t)} for t in team_list])
-    
-    html_code = f"""
-    <div id="drag-container" style="font-family: sans-serif; background: #ffffff; padding: 10px;">
-        <ul id="sortable-list" style="list-style: none; padding: 0; margin: 0;"></ul>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <script>
-        const teams = {items_json};
-        const listElement = document.getElementById('sortable-list');
-        const aegisFallback = "{GITHUB_BASE}Aegis.png";
-
-        function render() {{
-            listElement.innerHTML = '';
-            teams.forEach((team, index) => {{
-                const li = document.createElement('li');
-                li.setAttribute('data-id', team.name);
-                li.style = "display: flex; align-items: center; background: white; margin-bottom: 8px; padding: 12px; border-radius: 8px; border: 1px solid #eee; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
-                li.innerHTML = `
-                    <span style="font-weight: bold; color: #57606a; width: 35px; font-family: monospace; font-size: 14px;">#${{index + 1}}</span>
-                    <img src="${{team.logo}}" onerror="this.src='${{aegisFallback}}'" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
-                    <span style="font-weight: 600; color: #24292f; font-size: 16px;">${{team.name}}</span>
-                `;
-                listElement.appendChild(li);
-            }});
-        }}
-
-        render();
-
-        const sortable = new Sortable(listElement, {{
-            animation: 150,
-            onEnd: function() {{
-                const newOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
-                window.parent.postMessage({{
-                    type: 'streamlit:setComponentValue',
-                    value: newOrder
-                }}, '*');
-                
-                Array.from(listElement.children).forEach((li, idx) => {{
-                    li.querySelector('span').innerText = '#' + (idx + 1);
-                }});
-            }}
-        }});
-        
-        // Ensure Python gets the initial order immediately
-        setTimeout(() => {{
-            const initialOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: initialOrder}}, '*');
-        }}, 500);
-    </script>
-    """
-    # Height increased to 1150 to ensure #16 Huligani is visible
-    return components.html(html_code, height=1150)
-
 # --- HEADER ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
@@ -106,23 +41,41 @@ st.markdown(f"""
 tabs = st.tabs(["🔮 LOCK-IN", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
 with tabs[0]:
-    oracle_name = st.text_input("Oracle Name", placeholder="Enter your name...")
+    st.markdown("### 1. Arrange Your Prophecy")
+    st.caption("Drag the names to set your order. The visual preview below updates live.")
     
-    # Capture the order
-    current_order = unified_prediction_ui(TEAMS)
+    # This is the functional part that writes to the sheet
+    current_order = sort_items(TEAMS, direction="vertical", key="oracle_ranker_v1")
+    
+    st.divider()
+    
+    st.markdown("### 2. Visual Prophecy Preview")
+    # This shows the logos in the order you just picked
+    for i, team in enumerate(current_order):
+        logo_url = f"{GITHUB_BASE}{team.replace(' ', '%20')}.png"
+        st.markdown(f"""
+            <div style="display: flex; align-items: center; background: white; margin-bottom: 5px; padding: 8px 15px; border-radius: 8px; border: 1px solid #eee;">
+                <span style="font-weight: bold; color: #57606a; width: 30px;">#{i+1}</span>
+                <img src="{logo_url}" onerror="this.src='{GITHUB_BASE}Aegis.png'" style="width: 24px; height: 24px; margin-right: 12px; object-fit: contain;">
+                <span style="font-weight: 600; color: #24292f;">{team}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.divider()
+    oracle_name = st.text_input("Oracle Name", placeholder="Who are you?")
     
     if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
         if not oracle_name:
-            st.error("Please enter your name.")
+            st.error("Identification required.")
         else:
-            # If current_order is None (initial load), use the default TEAMS list
-            final_order = current_order if current_order is not None else TEAMS
-            
             try:
+                # current_order is a standard list of strings, so .join() will work perfectly
+                rank_string = ",".join(current_order)
+                
                 new_entry = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "Oracle Name": oracle_name,
-                    "Rankings": ",".join(final_order)
+                    "Rankings": rank_string
                 }])
                 
                 updated_df = pd.concat([subs_df, new_entry], ignore_index=True)
@@ -150,10 +103,10 @@ with tabs[1]:
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     score += abs(p_rank - a_rank) * m
                     if p_rank == a_rank: perf += 1
-            lb.append({"Oracle": row['Oracle Name'], "Penalty": int(score), "Perfect": perf})
-        st.table(pd.DataFrame(lb).sort_values(["Penalty", "Perfect"], ascending=[True, False]))
+            lb.append({"Oracle": row['Oracle Name'], "Penalty Score": int(score), "Perfect Picks": perf})
+        st.table(pd.DataFrame(lb).sort_values(["Penalty Score", "Perfect Picks"], ascending=[True, False]))
     else:
-        st.info("Awaiting tournament results.")
+        st.info("Awaiting tournament results in the Google Sheet.")
 
 with tabs[2]:
     st.subheader("Prediction Matrix")
@@ -176,5 +129,5 @@ with tabs[3]:
     * **3rd-4th Place:** 2x Penalty
     * **Other:** 1x Penalty
     
-    **Goal:** Achieve the lowest Penalty Score. Tie-breakers are decided by 'Perfect' rank matches.
+    **Scoring:** Lowest Penalty Score wins. Tie-breaks decided by **Perfect Picks**.
     """)
