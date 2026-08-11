@@ -11,9 +11,9 @@ BRANCH = "main"
 # Exact names from your GitHub file list to ensure logos link correctly
 TEAMS = [
     "Team Falcons", "LGD Gaming", "Iron Wing", "Nigma Galaxy",
-    "BoomBoys", "OG", "TEAM VISION", "Team Resilience",
+    "BoomBoys", "OG", "Team Vision", "Team Resilience",
     "Team Spirit", "Xtreme Gaming", "Team Liquid", "Vigi Gaming",
-    "Aurora Gaming", "GamerLegion", "Team Yandex", "huligani"
+    "Aurora Gaming", "GamerLegion", "Team Yandex", "Huligani"
 ]
 
 st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
