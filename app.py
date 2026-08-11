@@ -11,10 +11,10 @@ BRANCH = "main"
 
 # Finalized 16-Team Roster for 2026
 TEAMS = [
-    "Team Falcons", "LGD Gaming", "Iron Wing", "Nigma Galaxy",
-    "BoomBoys", "OG", "TEAM VISION", "Team Resilience",
-    "Team Spirit", "Xtreme Gaming", "Team Liquid", "Vigi Gaming",
-    "Aurora Gaming", "GamerLegion", "Team Yandex", "huligani"
+    "Falcons", "LGD", "Iron Wing", "Nigma",
+    "BoomBoys", "OG", "Team Vision", "Resilience",
+    "Spirit", "Xtreme", "Liquid", "Vigi",
+    "Aurora", "GamerLegion", "Yandex", "Huligani"
 ]
 
 st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
