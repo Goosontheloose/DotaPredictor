@@ -9,7 +9,7 @@ GITHUB_USER = "Goosontheloose"
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 
-# Finalized 16-Team Roster
+# Finalized 16-Team Roster for 2026
 TEAMS = [
     "Team Falcons", "LGD Gaming", "Iron Wing", "Nigma Galaxy",
     "BoomBoys", "OG", "TEAM VISION", "Team Resilience",
@@ -23,9 +23,25 @@ st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
 st.markdown(f"""
     <style>
     .header-container {{ display: flex; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
-    .preview-card {{ background: #fdfdfd; padding: 15px; border-radius: 10px; border: 1px solid #eee; position: sticky; top: 20px; }}
-    .team-row-mini {{ display: flex; align-items: center; gap: 10px; padding: 5px; border-bottom: 1px solid #f0f0f0; font-size: 0.9em; }}
-    .rank-num {{ font-weight: bold; color: #555; min-width: 25px; }}
+    /* Styling for the Rank Cards inside the Sortable List */
+    .st-sortable-item {{ 
+        background: #ffffff !important; 
+        border: 1px solid #e0e0e0 !important; 
+        border-radius: 8px !important; 
+        padding: 10px !important; 
+        margin-bottom: 8px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+    }}
+    .rank-card {{ display: flex; align-items: center; gap: 15px; }}
+    .rank-badge {{ 
+        background: #f0f2f6; 
+        color: #31333F; 
+        font-weight: bold; 
+        padding: 4px 10px; 
+        border-radius: 4px; 
+        min-width: 40px; 
+        text-align: center;
+    }}
     .rule-card {{ background: #ffffff; padding: 20px; border-radius: 8px; border-left: 5px solid #00FF9D; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
     .multiplier-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
     .multiplier-table th, .multiplier-table td {{ padding: 10px; border: 1px solid #eee; text-align: left; }}
@@ -33,8 +49,8 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-def get_logo_url(file_name):
-    fn = "Nigma" if file_name == "Nigma Galaxy" else file_name
+def get_logo_url(team_name):
+    fn = "Nigma" if team_name == "Nigma Galaxy" else team_name
     return f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{fn.replace(' ', '%20')}.png"
 
 # --- DATA ENGINE ---
@@ -61,53 +77,58 @@ st.markdown(f"""
 
 tabs = st.tabs(["🔮 LOCK-IN", "📊 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
-# --- TAB 1: LOCK-IN (RESTORED DRAG & DROP) ---
+# --- TAB 1: LOCK-IN (UNIFIED VIEW) ---
 with tabs[0]:
-    col_input, col_preview = st.columns([1, 1])
-    with col_input:
-        st.subheader("Finalize Your Prophecy")
-        oracle_name = st.text_input("Oracle Name", placeholder="Enter your name...")
-        st.info("Drag and drop teams to set your 1-16 ranking. Rank #1 is at the top.")
-        
-        current_ranking = sort_items(TEAMS, direction="vertical")
-        
-        if st.button("LOCK IN PROPHECY", use_container_width=True, type="primary"):
-            if not oracle_name:
-                st.error("Identification required. Please enter an Oracle Name.")
-            else:
-                new_data = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ",".join(current_ranking)
-                }])
-                # Append logic prevents the old name "resurrection" bug
-                conn.create(worksheet="Submissions", data=pd.concat([subs_df, new_data], ignore_index=True))
-                st.success(f"Prophecy etched for {oracle_name}!")
-                st.balloons()
-                st.cache_data.clear()
+    st.subheader("Finalize Your Prophecy")
+    oracle_name = st.text_input("Oracle Name", placeholder="Enter your name to be recorded...")
+    
+    st.info("Drag and drop to reorder. The list reflects your live 1-16 standings.")
 
-    with col_preview:
-        st.markdown('<div class="preview-card">', unsafe_allow_html=True)
-        st.subheader("Live Standings Preview")
-        for i, team in enumerate(current_ranking):
-            st.markdown(f"""
-                <div class="team-row-mini">
-                    <span class="rank-num">#{i+1}</span>
-                    <img src="{get_logo_url(team)}" width="22" height="22" onerror="this.style.display='none'">
-                    <span>{team}</span>
+    # Create the data for the sortable items including the HTML for logos
+    # Note: sort_items only returns the labels, so we map the visual cards
+    sortable_data = [
+        {
+            "id": team,
+            "content": f"""
+                <div class="rank-card">
+                    <img src="{get_logo_url(team)}" width="30" height="30" style="object-fit: contain;">
+                    <span style="font-weight: 500;">{team}</span>
                 </div>
-            """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            """
+        } for team in TEAMS
+    ]
 
-# --- TAB 2: LEADERBOARD ---
+    # Render the drag-and-drop list
+    # We use the list of dicts to show logos, returns the 'id' (team name)
+    current_ranking = sort_items(sortable_data, direction="vertical", key="oracle_sort")
+    
+    st.markdown("---")
+    if st.button("LOCK IN PROPHECY", use_container_width=True, type="primary"):
+        if not oracle_name:
+            st.error("Identification required. Please enter an Oracle Name.")
+        else:
+            new_row = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Oracle Name": oracle_name,
+                "Rankings": ",".join(current_ranking)
+            }])
+            # APPEND ONLY: Safely adds to the end without resurrecting old data
+            updated_subs = pd.concat([subs_df, new_row], ignore_index=True)
+            conn.create(worksheet="Submissions", data=updated_subs)
+            st.success(f"Prophecy locked for {oracle_name}!")
+            st.balloons()
+            st.cache_data.clear()
+
+# --- TAB 2: LEADERBOARD (DEDUPLICATED) ---
 with tabs[1]:
     if results_df.empty or "Rank" not in results_df.columns:
-        st.info("Awaiting tournament start. Leaderboard in standby.")
+        st.info("Awaiting official tournament results. Standings will update automatically.")
     elif subs_df.empty:
-        st.warning("No prophecies found.")
+        st.warning("No prophecies found in the archives.")
     else:
-        # Deduplicate: Only use the latest submission for each person
+        # Deduplicate: Only calculate the LATEST entry for every unique name
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
+        
         actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         leaderboard = []
         
@@ -121,22 +142,23 @@ with tabs[1]:
                     mult = 4 if p_rank == 1 else 3 if p_rank == 2 else 2 if p_rank in [3,4] else 1
                     score += (abs(p_rank - a_rank) * mult)
                     if p_rank == a_rank: perfect += 1
-            leaderboard.append({"Oracle": row['Oracle Name'], "Score": int(score), "Perfect Picks": perfect})
+            leaderboard.append({"Oracle": row['Oracle Name'], "Penalty Score": int(score), "Perfect Picks": perfect})
         
-        st.table(pd.DataFrame(leaderboard).sort_values(by=["Score", "Perfect Picks"], ascending=[True, False]))
+        lb_display = pd.DataFrame(leaderboard).sort_values(by=["Penalty Score", "Perfect Picks"], ascending=[True, False])
+        st.table(lb_display)
 
 # --- TAB 3: MATRIX ---
 with tabs[2]:
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        matrix_data = []
+        matrix_list = []
         for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
             entry = {"Oracle": row['Oracle Name']}
             for i, team in enumerate(preds):
                 entry[f"#{i+1}"] = team
-            matrix_data.append(entry)
-        st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True)
+            matrix_list.append(entry)
+        st.dataframe(pd.DataFrame(matrix_list), use_container_width=True, hide_index=True)
 
 # --- TAB 4: PROTOCOL (FULL RESTORATION) ---
 with tabs[3]:
@@ -183,4 +205,4 @@ with tabs[3]:
     </div>
     """, unsafe_allow_html=True)
 
-    st.info("**Example Calculation:** You predict Team Liquid at #1 (4x). They finish #5. Penalty = |1 - 5| * 4 = 16 points.")
+    st.info("**Example Calculation:** You predict Team Liquid at #1 (4x multiplier). They finish #5. Penalty = |1 - 5| * 4 = 16 points.")
