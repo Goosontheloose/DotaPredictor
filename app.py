@@ -7,7 +7,7 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="AEGIS ORACLE: SHANGHAI 2026", layout="wide")
 
-# THE EXACT 16 TEAMS FROM YOUR LIST
+# THE EXACT 16 TEAMS
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
     "BoomBoys", "OG", "Team Vision", "Resilience",
@@ -37,17 +37,11 @@ subs_df, res_df = load_data()
 # --- CLEAN LIGHT UI STYLING ---
 st.markdown("""
     <style>
-    /* Main Layout */
     .stApp { background-color: #fcfcfc; color: #1a1a1a; }
-    
-    /* Buttons */
     .stButton>button { 
         width: 100%; border-radius: 4px; height: 3.5em; 
         background-color: #2ea44f; color: white; font-weight: bold; border: none;
     }
-    .stButton>button:hover { background-color: #2c974b; }
-
-    /* Team Cards (Light Style) */
     .team-card { 
         display: flex; align-items: center; padding: 10px 15px; 
         background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px; 
@@ -58,11 +52,11 @@ st.markdown("""
         padding: 3px 10px; border-radius: 4px; margin-right: 15px; 
         min-width: 40px; text-align: center; border: 1px solid #d0d7de;
     }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
-    .stTabs [data-baseweb="tab"] { font-weight: 600; color: #57606a; }
-    .stTabs [aria-selected="true"] { color: #0969da !important; }
+    /* Fixing the Protocol Tab Spacing */
+    .protocol-card {
+        background: white; padding: 20px; border-radius: 8px; 
+        border: 1px solid #d0d7de; margin-bottom: 20px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -75,10 +69,8 @@ with tab1:
     
     with col1:
         st.subheader("1. Rank the Teams")
-        st.caption("Drag and drop to set your predicted finishing order.")
-        
-        # Interactive Sortable
-        current_order = sort_items(TEAMS, direction="vertical", key="clean_ranker_v1")
+        # Explicitly ensuring this starts with the correct order
+        current_order = sort_items(TEAMS, direction="vertical", key="final_stable_ranker")
         
         st.divider()
         oracle_name = st.text_input("Your Oracle Name", placeholder="Enter handle...")
@@ -150,19 +142,37 @@ with tab3:
 # --- TAB 4: PROTOCOL ---
 with tab4:
     st.header("📜 Scoring Protocol")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("""
-        **Golf Scoring:** Lowest total points wins.
-        - **Penalty = Distance x Multiplier**
-        - **Rank #1:** 4x Penalty
-        - **Rank #2:** 3x Penalty
-        - **Rank #3-4:** 2x Penalty
-        - **All others:** 1x Penalty
-        """)
-    with c2:
-        st.markdown("""
-        **Tie-Breakers:**
-        1. Total number of 'Perfect Picks' (exact rank match).
-        2. Lowest total penalty in the Top 4 prediction bracket.
-        """)
+    
+    st.markdown("""
+    <div class="protocol-card">
+        <h3>1. The Formula</h3>
+        <p>Your score is based on the <b>Distance</b> between your prediction and the team's actual finish, 
+        multiplied by the <b>Stakes Multiplier</b> of your predicted rank.</p>
+        <code>Total Penalty = Σ (ABS(Predicted Rank - Actual Rank) × Multiplier)</code>
+    </div>
+    
+    <div class="protocol-card">
+        <h3>2. Multiplier Tiers</h3>
+        <ul>
+            <li><b>1st Place Prediction:</b> 4x Multiplier (High Stakes)</li>
+            <li><b>2nd Place Prediction:</b> 3x Multiplier</li>
+            <li><b>3rd - 4th Place Prediction:</b> 2x Multiplier</li>
+            <li><b>5th - 16th Place Prediction:</b> 1x Multiplier (Base Stakes)</li>
+        </ul>
+    </div>
+    
+    <div class="protocol-card">
+        <h3>3. Fixed vs. Projected Scoring</h3>
+        <p><b>Fixed Scores:</b> Calculated for teams whose final rank is officially locked (e.g., Eliminated teams).</p>
+        <p><b>Projected Scores:</b> For teams still in the tournament, we calculate the <i>minimum possible penalty</i> 
+        based on their current highest possible placement.</p>
+    </div>
+    
+    <div class="protocol-card">
+        <h3>4. Tie-Breakers</h3>
+        <ol>
+            <li><b>Perfect Picks:</b> Most exact rank matches (Bullseyes).</li>
+            <li><b>Top-Heavy Accuracy:</b> Lowest penalty count within your Top 4 predictions.</li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
