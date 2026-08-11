@@ -13,8 +13,10 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1f6feb; color: white; border: none; }
     .stButton>button:hover { background-color: #388bfd; border: none; }
     .rank-box { padding: 10px; border-radius: 10px; background: #161b22; border: 1px solid #30363d; margin-bottom: 10px; }
-    h3 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+    h3 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 20px; }
     .team-logo { vertical-align: middle; margin-right: 10px; border-radius: 4px; }
+    .protocol-card { background: #161b22; padding: 20px; border-radius: 10px; border-left: 5px solid #1f6feb; margin-bottom: 15px; }
+    .multiplier-tag { background: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -72,36 +74,24 @@ def save_submission(name, rankings_list):
 def calculate_dual_scores(pred_list, actual_df):
     if actual_df is None or actual_df.empty or 'Team' not in actual_df.columns:
         return 0, 0
-    
     fixed_score = 0
     projected_score = 0
     actual_map = dict(zip(actual_df['Team'], actual_df['Rank']))
     status_map = dict(zip(actual_df['Team'], actual_df.get('Status', ['Eliminated']*len(actual_df))))
-    
     for i, team in enumerate(pred_list):
         pred_rank = i + 1
         official_rank = actual_map.get(team, 0)
         status = status_map.get(team, "Eliminated")
-        
         if official_rank == 0: continue 
-        
         diff = abs(pred_rank - official_rank)
-        
-        # Apply Multipliers
         multiplier = 1
         if pred_rank == 1: multiplier = 4
         elif pred_rank == 2: multiplier = 3
         elif pred_rank in [3, 4]: multiplier = 2
-        
         points = diff * multiplier
-        
-        # Add to Projected (Always)
         projected_score += points
-        
-        # Add to Fixed only if team is "Eliminated" or "Final"
         if status in ["Eliminated", "Winner", "Final"]:
             fixed_score += points
-            
     return fixed_score, projected_score
 
 # --- UI LAYOUT ---
@@ -109,7 +99,7 @@ res_df, subs_df = load_data()
 
 st.title("🏮 AEGIS ORACLE: SHANGHAI 2026")
 
-tab1, tab2, tab3 = st.tabs(["🔮 LOCK IN", "🏆 LEADERBOARD", "📊 MATRIX"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔮 LOCK IN", "🏆 LEADERBOARD", "📊 MATRIX", "📖 PROTOCOL"])
 
 with tab1:
     col1, col2 = st.columns([1, 2])
@@ -118,8 +108,7 @@ with tab1:
         oracle_name = st.text_input("Oracle Name", placeholder="Enter your handle...")
         sorted_teams = sort_items(TEAMS, direction='vertical')
         if st.button("LOCK IN PREDICTIONS"):
-            if not oracle_name:
-                st.error("Identify yourself, Oracle.")
+            if not oracle_name: st.error("Identify yourself, Oracle.")
             else:
                 if save_submission(oracle_name, sorted_teams):
                     st.success("Prophecy Recorded.")
@@ -135,11 +124,11 @@ with tab2:
     if res_df is not None and not res_df.empty:
         live_standings = res_df[res_df['Rank'] > 0].sort_values("Rank")
         if not live_standings.empty:
-            for _, row in live_standings.iterrows():
+            cols = st.columns(4)
+            for idx, row in live_standings.iterrows():
                 logo = LOGOS.get(row['Team'], "")
-                st.markdown(f"**{row['Rank']}** | <img src='{logo}' width='20' class='team-logo'> {row['Team']}", unsafe_allow_html=True)
-        else:
-            st.info("Tournament hasn't started. No official ranks assigned yet.")
+                cols[idx % 4].markdown(f"**#{row['Rank']}** <img src='{logo}' width='20' class='team-logo'> {row['Team']}", unsafe_allow_html=True)
+        else: st.info("Tournament hasn't started. No official ranks assigned yet.")
 
     st.subheader("🏅 Oracle Leaderboard")
     if subs_df is not None and not subs_df.empty:
@@ -147,24 +136,52 @@ with tab2:
         for _, row in subs_df.iterrows():
             p_list = row['Rankings'].split(',')
             f_score, p_score = calculate_dual_scores(p_list, res_df)
-            leaderboard.append({
-                "Oracle": row['Oracle Name'], 
-                "Fixed Score": f_score, 
-                "Projected Score": p_score,
-                "Last Updated": row['Timestamp']
-            })
-        
+            leaderboard.append({"Oracle": row['Oracle Name'], "Fixed Score": f_score, "Projected Score": p_score, "Updated": row['Timestamp']})
         lb_df = pd.DataFrame(leaderboard).sort_values("Projected Score", ascending=True)
         st.table(lb_df)
-    else:
-        st.warning("No prophecies recorded yet.")
 
 with tab3:
     st.subheader("Prediction Matrix")
     if subs_df is not None and not subs_df.empty:
-        matrix_data = {}
-        for _, row in subs_df.iterrows():
-            matrix_data[row['Oracle Name']] = row['Rankings'].split(',')
+        matrix_data = {row['Oracle Name']: row['Rankings'].split(',') for _, row in subs_df.iterrows()}
         m_df = pd.DataFrame(matrix_data)
         m_df.index = [f"Rank {i+1}" for i in range(16)]
         st.dataframe(m_df, use_container_width=True)
+
+with tab4:
+    st.header("The Oracle Protocol")
+    
+    st.markdown("""
+    <div class='protocol-card'>
+    <h3>⛳ Golf Scoring</h3>
+    Your score is the <b>absolute difference</b> between your predicted rank and the team's official finish. 
+    <br><i>Example: You predict Liquid at #1, they finish at #3. Your base penalty is 2 points.</i>
+    <br><b>LOWEST SCORE WINS.</b>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.markdown("""
+        <div class='protocol-card'>
+        <h3>🔥 High-Stakes Multipliers</h3>
+        The higher you rank a team, the more accurate you must be. Penalties are multiplied for top spots:
+        <ul>
+            <li><b>1st Place:</b> Penalty x 4 <span class='multiplier-tag'>CRITICAL</span></li>
+            <li><b>2nd Place:</b> Penalty x 3</li>
+            <li><b>3rd-4th Place:</b> Penalty x 2</li>
+            <li><b>5th-16th Place:</b> Penalty x 1</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_m2:
+        st.markdown("""
+        <div class='protocol-card'>
+        <h3>📊 Score Definitions</h3>
+        <ul>
+            <li><b>Fixed Score:</b> Points accumulated from teams who have been officially <b>Eliminated</b> or reached the <b>Final</b>. This score will never decrease.</li>
+            <li><b>Projected Score:</b> Your "Live" score based on current tournament standings. This will fluctuate until the final match is over.</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
