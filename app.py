@@ -2,116 +2,149 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 from streamlit_sortables import sort_items
-import datetime
+from datetime import datetime
 
-# --- 1. APP CONFIGURATION ---
-st.set_page_config(page_title="Aegis Oracle | TI 2026", layout="wide", page_icon="🏆")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Aegis Oracle: TI 2026", layout="wide")
 
-# Custom Styling
+# Shanghai Shadow-Tech Styling
 st.markdown("""
     <style>
-    .main { background-color: #0d1117; color: #ffffff; }
-    .stButton>button { 
-        width: 100%; 
-        background-color: #e32929; 
-        color: white; 
-        border-radius: 8px; 
-        height: 3.5em; 
-        font-weight: bold; 
-        border: none;
-        transition: 0.3s;
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesque:wght@700&family=JetBrains+Mono&display=swap');
+    
+    .main { background-color: #050507; color: #ffffff; }
+    h1, h2 { font-family: 'Space Grotesque', sans-serif; color: #FF003C; text-transform: uppercase; letter-spacing: 2px; }
+    .stMarkdown { font-family: 'JetBrains Mono', monospace; }
+    
+    /* Glassmorphism Cards */
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(0, 245, 255, 0.3);
+        border-radius: 10px;
+        padding: 20px;
+        backdrop-filter: blur(10px);
     }
-    .stButton>button:hover { background-color: #ff4b4b; border: 1px solid white; }
-    .stTextInput>div>div>input { background-color: #161b22; color: white; border: 1px solid #30363d; border-radius: 5px; }
-    h1, h2, h3 { color: #f0ad4e; text-align: center; font-family: 'serif'; }
-    .prediction-box { padding: 20px; border-radius: 10px; background-color: #161b22; border: 1px solid #30363d; }
+    
+    .stButton>button {
+        background: linear-gradient(45deg, #FF003C, #00F5FF);
+        color: white; border: none; font-weight: bold; width: 100%;
+    }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# --- 2. DATA ---
+# --- CORE DATA ---
 TEAMS = [
-    "Team Spirit", "Gaimin Gladiators", "Team Liquid", "Xtreme Gaming",
-    "Falcons", "Tundra Esports", "BetBoom Team", "Cloud9",
-    "Entity", "Aurora", "HEROIC", "beastcoast",
-    "PSG.Quest", "G2.iG", "Nouns", "1win", "Team Zero"
+    "Team Spirit", "Parivision", "Team Liquid", "Betboom Team", 
+    "Team Falcons", "Tundra Esports", "Team Tidebound", "Aurora", 
+    "Yakutou", "Nigma Galaxy", "Navi", "Xtreme Gaming", 
+    "Heroic", "Wildcard Gaming", "Boom Esports", "Team Nemesis"
 ]
 
-# --- 3. SESSION STATE ---
-if 'submitted' not in st.session_state:
-    st.session_state.submitted = False
+# --- GOOGLE SHEETS CONNECTION ---
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except Exception as e:
+    st.error(f"⚠️ Connection Protocol Failed: {e}")
+    st.stop()
 
-# --- 4. MAIN INTERFACE ---
-st.title("🏆 AEGIS ORACLE: TI 2026")
-st.markdown("### The International Prediction Arena")
+# --- FUNCTIONS ---
+def get_live_results():
+    """Fetches the official standings from the 'Results' tab."""
+    try:
+        df = conn.read(worksheet="Results", ttl="1s")
+        return dict(zip(df['Team Name'], df['Official Rank']))
+    except:
+        return {team: 0 for team in TEAMS} # Fallback if empty
 
-if not st.session_state.submitted:
-    # Sidebar or Header for Input
-    with st.container():
-        player_name = st.text_input("ENTER ORACLE NAME", placeholder="Type your name to claim your prophecy...")
+def calculate_score(predictions, results):
+    """Golf Scoring: ABS(Pred - Result) * Multiplier. Lower is better."""
+    total = 0
+    breakdown = []
     
-    st.divider()
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.info("💡 **Instructions:** Drag and drop teams to rank them from 1st (Top) to 17th (Bottom). Your score will be calculated based on this exact order.")
+    for i, team in enumerate(predictions):
+        pred_rank = i + 1
+        actual_rank = results.get(team, 0)
         
-        # Drag and Drop List
-        user_ranking = sort_items(TEAMS, direction='vertical')
+        # Multipliers for Top 3
+        multiplier = 4 if pred_rank == 1 else (3 if pred_rank == 2 else (2 if pred_rank <= 4 else 1))
         
-        st.write("") # Spacing
-        
-        if st.button("LOCK IN PREDICTIONS"):
-            if not player_name:
-                st.error("⚠️ The Oracle requires a name to record your fate.")
-            else:
-                with st.spinner("Writing your destiny to the Aegis Ledger..."):
-                    try:
-                        # Establish Connection
-                        conn = st.connection("gsheets", type=GSheetsConnection)
-                        
-                        # Fetch existing data to append correctly
-                        # Ensure 'ttl=0' to bypass caching and get the absolute latest sheet state
-                        existing_data = conn.read(worksheet="Submissions", ttl=0)
-                        
-                        # Create new record
-                        new_record = pd.DataFrame([{
-                            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Oracle Name": player_name,
-                            "Rankings": ", ".join(user_ranking)
-                        }])
-                        
-                        # Combine and Push
-                        updated_df = pd.concat([existing_data, new_record], ignore_index=True)
-                        conn.update(worksheet="Submissions", data=updated_df)
-                        
-                        # Mark as Success
-                        st.session_state.submitted = True
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error("🔮 **Prophecy Interrupted!**")
-                        # Detailed error reporting for debugging
-                        st.exception(e) 
-                        st.info("Check: 1. Is 'Submissions' tab name correct? 2. Is Service Account an Editor? 3. Is Google Drive API enabled?")
+        # Only score if team has an official result (non-zero)
+        if actual_rank > 0:
+            gap = abs(pred_rank - actual_rank)
+            weighted_gap = gap * multiplier
+            total += weighted_gap
+            breakdown.append({"Team": team, "Pred": pred_rank, "Actual": actual_rank, "Pts": weighted_gap})
+        else:
+            breakdown.append({"Team": team, "Pred": pred_rank, "Actual": "Active", "Pts": 0})
+            
+    return total, pd.DataFrame(breakdown)
 
-else:
-    # Success State
-    st.container()
-    st.success("✅ **YOUR PROPHECY HAS BEEN RECORDED!**")
-    st.balloons()
-    
-    st.markdown("""
-        <div style="text-align: center; padding: 50px;">
-            <h2>The Aegis awaits.</h2>
-            <p>Your rankings are secured in the ledger. Check the leaderboard after the Grand Finals.</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    if st.button("SUBMIT ANOTHER PREDICTION"):
-        st.session_state.submitted = False
-        st.rerun()
+# --- UI LAYOUT ---
+st.title("🏮 Aegis Oracle: TI 2026 Shanghai")
+tabs = st.tabs(["🏆 Leaderboard", "🔮 Lock Predictions", "🛠 Arbiter Console"])
 
-# --- 5. FOOTER ---
-st.divider()
-st.caption("Aegis Oracle v1.0 | Data stored securely via Google Cloud")
+# --- TAB 1: LEADERBOARD ---
+with tabs[0]:
+    st.subheader("Prophetic Hierarchy")
+    official_results = get_live_results()
+    
+    try:
+        submissions = conn.read(worksheet="Submissions", ttl="1s")
+        if not submissions.empty:
+            leaderboard_data = []
+            for _, row in submissions.iterrows():
+                pred_list = row['Rankings'].split(", ")
+                score, _ = calculate_score(pred_list, official_results)
+                leaderboard_data.append({"Oracle": row['Oracle Name'], "Total Points": score})
+            
+            lb_df = pd.DataFrame(leaderboard_data).sort_values("Total Points")
+            st.table(lb_df)
+            
+            # Detailed View for specific Oracle
+            selected_oracle = st.selectbox("Inspect Oracle Details", lb_df['Oracle'])
+            user_preds = submissions[submissions['Oracle Name'] == selected_oracle]['Rankings'].iloc[0].split(", ")
+            _, detail_df = calculate_score(user_preds, official_results)
+            st.dataframe(detail_df, use_container_width=True)
+    except:
+        st.info("No prophecies recorded yet. Be the first to lock yours in.")
+
+# --- TAB 2: PREDICTIONS ---
+with tabs[1]:
+    st.subheader("The Arena: Rank Your Teams")
+    oracle_name = st.text_input("Enter your Oracle Name (e.g., Ruben, Stok, Frederik)")
+    
+    st.write("Drag and drop to rank (Top = 1st Place / 4x Multiplier)")
+    ranked_list = sort_items(TEAMS, direction='vertical')
+    
+    if st.button("Lock in Predictions"):
+        if not oracle_name:
+            st.warning("You must provide an Oracle Name to bind your destiny.")
+        else:
+            # Prepare data
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            rank_string = ", ".join(ranked_list)
+            new_data = pd.DataFrame([[timestamp, oracle_name, rank_string]], 
+                                    columns=["Timestamp", "Oracle Name", "Rankings"])
+            
+            try:
+                # Append to Google Sheet
+                existing_data = conn.read(worksheet="Submissions")
+                updated_df = pd.concat([existing_data, new_data], ignore_index=True)
+                conn.update(worksheet="Submissions", data=updated_df)
+                st.success(f"Prophecy Locked, {oracle_name}. Your fate is sealed.")
+            except Exception as e:
+                st.error(f"Transmission Failed: {e}")
+
+# --- TAB 3: ADMIN ---
+with tabs[2]:
+    st.subheader("Grand Arbiter Terminal")
+    st.write("Current Official Standings (Stored in 'Results' tab):")
+    st.json(official_results)
+    
+    st.info("""
+    **Arbiter Instructions:**
+    1. Open the 'TI_2026' Google Sheet.
+    2. In the 'Results' tab, enter the team name and their final rank.
+    3. For ties (5th-6th), enter **5**. For (7th-8th), enter **7**.
+    4. The leaderboard will update automatically on refresh.
+    """)
