@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
+from streamlit_sortables import sort_items
 from datetime import datetime
 
 # --- CONFIGURATION ---
@@ -21,8 +22,6 @@ st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
 st.markdown(f"""
     <style>
     .header-container {{ display: flex; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; margin-bottom: 25px; }}
-    .team-row {{ display: flex; align-items: center; gap: 12px; padding: 10px; background: #f9f9f9; border-radius: 6px; margin-bottom: 5px; border: 1px solid #eee; }}
-    .rank-badge {{ background: #222; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold; min-width: 35px; text-align: center; }}
     .protocol-card {{ background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.02); margin-bottom: 20px; }}
     </style>
 """, unsafe_allow_html=True)
@@ -35,7 +34,7 @@ def get_logo_url(file_name):
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
-def load_all_data():
+def load_data():
     try:
         res = conn.read(worksheet="Results")
         sub = conn.read(worksheet="Submissions")
@@ -43,7 +42,7 @@ def load_all_data():
     except:
         return pd.DataFrame(), pd.DataFrame()
 
-results_df, subs_df = load_all_data()
+results_df, subs_df = load_data()
 
 # --- HEADER ---
 st.markdown(f"""
@@ -55,34 +54,37 @@ st.markdown(f"""
 
 tabs = st.tabs(["🔮 LOCK-IN", "📊 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
-# --- TAB 1: LOCK-IN ---
+# --- TAB 1: LOCK-IN (DRAG & DROP RESTORED) ---
 with tabs[0]:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Your Prophecy")
-        name = st.text_input("Oracle Name")
-        if 'picks' not in st.session_state: st.session_state.picks = []
-        rem = sorted([t for t in TEAMS if t not in st.session_state.picks])
-        pick = st.selectbox(f"Rank #{len(st.session_state.picks)+1}", ["Select..."] + rem)
-        if pick != "Select...":
-            st.session_state.picks.append(pick)
-            st.rerun()
-        if st.button("Reset"):
-            st.session_state.picks = []; st.rerun()
-    with c2:
-        st.subheader("Preview")
-        for i, team in enumerate(st.session_state.picks):
-            st.markdown(f'<div class="team-row"><div class="rank-badge">#{i+1}</div><img src="{get_logo_url(team)}" width="25"> {team}</div>', unsafe_allow_html=True)
-    if len(st.session_state.picks) == 16 and name:
-        if st.button("LOCK IN", use_container_width=True):
-            new_row = pd.DataFrame([{"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "Oracle Name": name, "Rankings": ",".join(st.session_state.picks)}])
-            conn.update(worksheet="Submissions", data=pd.concat([subs_df, new_row]))
-            st.success("Prophecy Locked!"); st.balloons()
+    st.subheader("Finalize Your Prophecy")
+    oracle_name = st.text_input("Enter Oracle Name", placeholder="e.g. Arteezy Fan #1")
+    
+    st.info("Drag and drop teams to set your 1-16 ranking.")
+    
+    # Drag and Drop Component
+    sorted_teams = sort_items(TEAMS, direction="vertical")
+    
+    if st.button("LOCK IN RANKINGS", use_container_width=True):
+        if not oracle_name:
+            st.error("Please enter an Oracle Name before locking in.")
+        else:
+            # Prepare new entry
+            new_entry = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Oracle Name": oracle_name,
+                "Rankings": ",".join(sorted_teams)
+            }])
+            
+            # Write ONLY the new entry to the sheet (prevents duplicate name bug)
+            conn.create(worksheet="Submissions", data=pd.concat([subs_df, new_entry], ignore_index=True))
+            st.success(f"Prophecy for {oracle_name} has been etched in the stars!")
+            st.balloons()
+            st.cache_data.clear() # Refresh data for the leaderboard
 
 # --- TAB 2: LEADERBOARD ---
 with tabs[1]:
     if results_df.empty or "Rank" not in results_df.columns:
-        st.info("Leaderboard will populate once the tournament begins.")
+        st.info("Leaderboard is offline until the Grand Arbiter updates official results.")
     elif subs_df.empty:
         st.warning("No prophecies found.")
     else:
@@ -90,23 +92,20 @@ with tabs[1]:
         leaderboard = []
         for _, row in subs_df.iterrows():
             preds = row['Rankings'].split(',')
-            score = 0
-            perfect = 0
+            score, perfect = 0, 0
             for i, team in enumerate(preds):
                 p_rank = i + 1
                 a_rank = actual_ranks.get(team, 0)
                 if a_rank > 0:
                     mult = 4 if p_rank == 1 else 3 if p_rank == 2 else 2 if p_rank in [3,4] else 1
-                    dist = abs(p_rank - a_rank)
-                    score += (dist * mult)
-                    if dist == 0: perfect += 1
-            leaderboard.append({"Oracle": row['Oracle Name'], "Score": score, "Perfect Picks": perfect})
-        lb_display = pd.DataFrame(leaderboard).sort_values(by=["Score", "Perfect Picks"], ascending=[True, False])
-        st.table(lb_display)
+                    score += (abs(p_rank - a_rank) * mult)
+                    if p_rank == a_rank: perfect += 1
+            leaderboard.append({"Oracle": row['Oracle Name'], "Score": int(score), "Perfect Picks": perfect})
+        
+        st.table(pd.DataFrame(leaderboard).sort_values(by=["Score", "Perfect Picks"], ascending=[True, False]))
 
 # --- TAB 3: MATRIX ---
 with tabs[2]:
-    st.subheader("Comparative Matrix")
     if not subs_df.empty:
         matrix_data = []
         for _, row in subs_df.iterrows():
@@ -117,32 +116,18 @@ with tabs[2]:
             matrix_data.append(entry)
         st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True)
 
-# --- TAB 4: PROTOCOL (RESTORED FULL CONTENT) ---
+# --- TAB 4: PROTOCOL ---
 with tabs[3]:
     st.markdown("""
     <div class="protocol-card">
-        <h3>Aegis Oracle Scoring Protocol</h3>
-        <p>This is a <b>Golf Scoring</b> system: The lower your score, the higher you rank on the leaderboard.</p>
-        <hr>
-        <h4>1. High-Stakes Multipliers</h4>
-        <p>Mistakes at the top of the bracket carry heavier penalties:</p>
+        <h3>Scoring Protocol</h3>
+        <p>Penalty = <code>|Predicted - Actual| × Multiplier</code></p>
         <ul>
-            <li><b>Rank 1 Prediction:</b> 4x Distance Multiplier</li>
-            <li><b>Rank 2 Prediction:</b> 3x Distance Multiplier</li>
-            <li><b>Rank 3-4 Predictions:</b> 2x Distance Multiplier</li>
-            <li><b>Rank 5-16 Predictions:</b> 1x Distance Multiplier</li>
+            <li><b>Rank 1:</b> 4x Penalty</li>
+            <li><b>Rank 2:</b> 3x Penalty</li>
+            <li><b>Rank 3-4:</b> 2x Penalty</li>
+            <li><b>Others:</b> 1x Penalty</li>
         </ul>
-        <h4>2. The Calculation</h4>
-        <p>Your score for each team is calculated as: <code>|Predicted Rank - Actual Rank| × Multiplier</code></p>
-        <p><b>Example:</b> You predict Team Liquid at <b>#1</b> (4x multiplier). They finish at <b>#3</b>.<br>
-        Calculation: <code>|1 - 3| = 2</code>. Penalty: <code>2 × 4 = 8 points</code>.</p>
-        <h4>3. Bracket Tiers & Ties</h4>
-        <p>Tournament results often feature shared placements (e.g., 5th-6th). For scoring purposes, any team within a tied tier is assigned the <b>highest (best) rank</b> of that tier.</p>
-        <ul>
-            <li><b>5th-6th Place:</b> Both assigned Rank 5</li>
-            <li><b>7th-8th Place:</b> Both assigned Rank 7</li>
-            <li><b>9th-12th Place:</b> All assigned Rank 9</li>
-            <li><b>13th-16th Place:</b> All assigned Rank 13</li>
-        </ul>
+        <p><i>Note: Shared tiers (e.g., 5th-6th) are assigned the best rank (5).</i></p>
     </div>
     """, unsafe_allow_html=True)
