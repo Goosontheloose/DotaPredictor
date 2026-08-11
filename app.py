@@ -1,144 +1,146 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
+from streamlit_sortables import sort_items
 
-# --- 0. HARD-CODED ROSTER (THE SOURCE OF SPEED) ---
-TEAMS_2026 = [
-    "G2 x iG", "Team Falcons", "Xtreme Gaming", "Team Liquid", 
-    "Tundra Gaming", "Cloud9", "Aurora", "BetBoom Team", 
-    "Team Spirit", "HEROIC", "beastcoast", "Gaimin Gladiators", 
-    "Talon Esports", "1win", "Nouns", "Team Zero"
-]
-
-# --- UI CONFIG ---
-st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide", page_icon="🏮")
+# --- CONFIGURATION & THEME ---
+st.set_page_config(page_title="AEGIS ORACLE: 2026", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono:wght@700&display=swap');
-    .main { background-color: #0b0e14; }
-    .rank-box { 
-        background: #1a1c23; border-left: 5px solid #00f2ff; 
-        padding: 12px 20px; margin: 8px 0; 
-        color: #ffffff !important; font-family: 'Inter', sans-serif;
-        font-size: 1.1rem; font-weight: 700; border-radius: 0 8px 8px 0;
-    }
-    .rank-num { color: #00f2ff; font-weight: 900; margin-right: 20px; font-family: 'JetBrains Mono', monospace; }
-    h1, h2, h3 { color: #00f2ff !important; text-transform: uppercase; letter-spacing: 1px; }
-    .stMetric { background: rgba(0, 242, 255, 0.05); border: 1px solid #00f2ff; padding: 15px; border-radius: 10px; }
+    .main { background-color: #0d1117; color: #c9d1d9; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1f6feb; color: white; border: none; }
+    .stButton>button:hover { background-color: #388bfd; border: none; }
+    [data-testid="stMetricValue"] { color: #58a6ff; }
+    .rank-box { padding: 10px; border-radius: 10px; background: #161b22; border: 1px solid #30363d; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. DATA ENGINE ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- HARDCODED TEAMS (Optimization) ---
+TEAMS = [
+    "Team Liquid", "Gaimin Gladiators", "Tundra Esports", "Team Falcons",
+    "Xtreme Gaming", "Cloud9", "BetBoom Team", "Aurora", 
+    "Nouns", "Team Spirit", "HEROIC", "PSG Quest",
+    "Team Zero", "1win", "MOUZ", "Talon Esports"
+]
 
-@st.cache_data(ttl=300) 
-def load_sheet_data():
+# --- DATA ENGINE (Cached to prevent 429 Errors) ---
+@st.cache_data(ttl=600)
+def load_data():
     try:
-        res = conn.read(worksheet="Results")
-        sub = conn.read(worksheet="Submissions")
-        return res, sub, None
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        results = conn.read(worksheet="Results", ttl=0)
+        submissions = conn.read(worksheet="Submissions", ttl=0)
+        return results, submissions
     except Exception as e:
-        return None, None, str(e)
+        return None, None
 
-# --- 2. THE SCORING LOGIC (RESTORED) ---
-def calculate_score(predictions, actual_df):
+def save_submission(name, rankings_list):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        existing_data = conn.read(worksheet="Submissions", ttl=0)
+        
+        new_entry = pd.DataFrame([{
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Oracle Name": name,
+            "Rankings": ",".join(rankings_list)
+        }])
+        
+        updated_df = pd.concat([existing_data, new_entry], ignore_index=True)
+        conn.update(worksheet="Submissions", data=updated_df)
+        st.cache_data.clear() # Force refresh after new entry
+        return True
+    except Exception as e:
+        st.error(f"Submission Error: {e}")
+        return False
+
+# --- SCORING LOGIC ---
+def calculate_golf_score(pred_list, actual_df):
+    if actual_df is None or actual_df.empty or 'Team' not in actual_df.columns:
+        return 0
+    
+    score = 0
     actual_map = dict(zip(actual_df['Team'], actual_df['Rank']))
-    total_penalty = 0
-    for i, team in enumerate(predictions):
+    
+    for i, team in enumerate(pred_list):
         pred_rank = i + 1
-        real_rank = actual_map.get(team, 0)
+        official_rank = actual_map.get(team, 0)
         
-        # Skip teams that haven't been placed yet in the 'Results' tab
-        if not real_rank or pd.isna(real_rank) or real_rank == 0:
-            continue
+        if official_rank == 0: continue # Team hasn't placed yet
+        
+        diff = abs(pred_rank - official_rank)
+        
+        # Weighted Multipliers
+        if pred_rank == 1: score += (diff * 4)
+        elif pred_rank == 2: score += (diff * 3)
+        elif pred_rank in [3, 4]: score += (diff * 2)
+        else: score += diff
             
-        # Multiplier Logic
-        mult = 1
-        if pred_rank == 1: mult = 4
-        elif pred_rank == 2: mult = 3
-        elif pred_rank in [3, 4]: mult = 2
+    return score
+
+# --- UI LAYOUT ---
+res_df, subs_df = load_data()
+
+st.title("🏮 AEGIS ORACLE: SHANGHAI 2026")
+
+tab1, tab2, tab3 = st.tabs(["🔮 LOCK IN", "🏆 LEADERBOARD", "📊 MATRIX"])
+
+with tab1:
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("The Prophecy")
+        oracle_name = st.text_input("Oracle Name", placeholder="Enter your handle...")
         
-        total_penalty += abs(pred_rank - real_rank) * mult
-    return total_penalty
-
-# --- 3. MAIN DASHBOARD ---
-st.title("🏮 AEGIS ORACLE: 2026")
-
-tabs = st.tabs(["🎯 SUBMIT", "🏆 LEADERBOARD", "📋 MATRIX", "🛠 ARBITER"])
-
-# Load data once for all tabs
-results_df, subs_df, error = load_sheet_data()
-
-# --- TAB 1: SUBMIT ---
-with tabs[0]:
-    col_in, col_pre = st.columns([1, 1], gap="large")
-    with col_in:
-        st.subheader("I. Identity")
-        oracle_name = st.text_input("Oracle Name", placeholder="e.g. Ruben")
-        picks = st.multiselect("II. Rank Teams (1st → 16th)", options=TEAMS_2026)
+        st.info("Drag teams to rank them (1st at the top)")
+        sorted_teams = sort_items(TEAMS, direction='vertical')
         
-        st.divider()
-        ready = len(picks) == 16 and oracle_name
-        if st.button("🔥 LOCK IN PROPHECY", disabled=not ready, use_container_width=True):
-            with st.spinner("Writing to Sheets..."):
-                new_row = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ",".join(picks)
-                }])
-                # We update by appending to the existing dataframe
-                updated_subs = pd.concat([subs_df, new_row], ignore_index=True)
-                conn.update(worksheet="Submissions", data=updated_subs)
-                st.cache_data.clear()
-                st.success("Prophecy Recorded!")
-                st.balloons()
-                st.rerun()
+        if st.button("LOCK IN PREDICTIONS"):
+            if not oracle_name:
+                st.error("Identify yourself, Oracle.")
+            else:
+                with st.spinner("Writing to the Great Archive..."):
+                    if save_submission(oracle_name, sorted_teams):
+                        st.success("Prophecy Recorded.")
+                        st.balloons()
 
-    with col_pre:
-        st.subheader("Live Prophecy Receipt")
-        if picks:
-            for i, team in enumerate(picks):
-                st.markdown(f'<div class="rank-box"><span class="rank-num">#{i+1:02d}</span> {team}</div>', unsafe_allow_html=True)
-        else:
-            st.info("Your rankings will appear here as you select teams.")
+    with col2:
+        st.subheader("Live Preview")
+        for i, team in enumerate(sorted_teams):
+            st.markdown(f"**{i+1}.** {team}")
 
-# --- TAB 2: LEADERBOARD ---
-with tabs[1]:
-    st.subheader("The Great Standings")
-    if error:
-        st.error(f"Sync Error: {error}")
-    elif not subs_df.empty:
-        lb_list = []
+with tab2:
+    st.subheader("Global Standings")
+    if subs_df is not None and not subs_df.empty:
+        leaderboard = []
         for _, row in subs_df.iterrows():
-            p_list = str(row['Rankings']).split(",")
-            pts = calculate_score(p_list, results_df)
-            lb_list.append({"Oracle": row['Oracle Name'], "Penalty Points": pts, "Date": row['Timestamp']})
+            p_list = row['Rankings'].split(',')
+            score = calculate_golf_score(p_list, res_df)
+            leaderboard.append({"Oracle": row['Oracle Name'], "Score": score, "Submission": row['Timestamp']})
         
-        lb_final = pd.DataFrame(lb_list).sort_values("Penalty Points")
-        
-        # Top 3 Metrics
-        m_cols = st.columns(min(len(lb_final), 3))
-        for i, (idx, r) in enumerate(lb_final.head(3).iterrows()):
-            m_cols[i].metric(f"Rank #{i+1}", r['Oracle'], f"{r['Penalty Points']} PTS")
-            
-        st.table(lb_final)
+        lb_df = pd.DataFrame(leaderboard).sort_values("Score", ascending=True)
+        st.table(lb_df)
     else:
-        st.info("No predictions found in the vault.")
+        st.warning("No prophecies recorded yet or Database Offline.")
 
-# --- TAB 3: MATRIX ---
-with tabs[2]:
-    st.subheader("The Oracle Comparison Matrix")
-    if not subs_df.empty:
-        matrix_data = {"Rank": [f"#{i+1:02d}" for i in range(16)]}
+with tab3:
+    st.subheader("Prediction Matrix")
+    if subs_df is not None and not subs_df.empty:
+        matrix_data = {}
         for _, row in subs_df.iterrows():
-            matrix_data[row['Oracle Name']] = str(row['Rankings']).split(",")
-        st.dataframe(pd.DataFrame(matrix_data), use_container_width=True, hide_index=True)
+            matrix_data[row['Oracle Name']] = row['Rankings'].split(',')
+        
+        m_df = pd.DataFrame(matrix_data)
+        m_df.index = [f"Rank {i+1}" for i in range(16)]
+        st.dataframe(m_df, use_container_width=True)
+    else:
+        st.write("Matrix awaiting data.")
 
-# --- TAB 4: ARBITER ---
-with tabs[3]:
-    st.subheader("Current Tournament Standings")
-    st.write("The Oracle scores are calculated based on these ranks:")
-    st.dataframe(results_df, use_container_width=True, hide_index=True)
-    st.caption("Admin: Update the 'Rank' column in your Google Sheet to refresh scores.")
+# --- DIAGNOSTIC FOOTER ---
+with st.expander("System Status"):
+    if res_df is None:
+        st.error("❌ Connection Failed: Check Sheet Tabs & Permissions")
+    else:
+        st.success("✅ Database Online")
+        st.write(f"Last API Sync: {datetime.now().strftime('%H:%M:%S')}")
