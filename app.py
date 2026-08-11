@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-from streamlit_sortables import sort_items
+import streamlit.components.v1 as components
 from datetime import datetime
 
 # --- CONFIGURATION ---
@@ -17,10 +17,6 @@ TEAMS = [
 
 GITHUB_BASE = "https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/"
 
-def get_logo(team_name):
-    # Precise pathing for your GitHub repo
-    return f"{GITHUB_BASE}{team_name.replace(' ', '%20')}.png"
-
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -35,138 +31,149 @@ def load_data():
 
 subs_df, res_df = load_data()
 
-# --- CLEAN UI STYLING ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #fcfcfc; }
-    .stButton>button { 
-        width: 100%; border-radius: 4px; height: 3.5em; 
-        background-color: #2ea44f; color: white; font-weight: bold; border: none;
-    }
-    .protocol-card {
-        background: white; padding: 20px; border-radius: 8px; 
-        border: 1px solid #d0d7de; margin-bottom: 20px;
-    }
-    /* Draggable Item Styling */
-    div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[style*="border: 1px solid"] {
-        background: white !important;
-        border: 1px solid #d0d7de !important;
-        border-radius: 8px !important;
-        padding: 10px !important;
-    }
-    </style>
+# --- CUSTOM UNIFIED DRAGGABLE COMPONENT ---
+def unified_oracle_ranker(team_list):
+    items_html = ""
+    for i, team in enumerate(team_list):
+        logo_url = f"{GITHUB_BASE}{team.replace(' ', '%20')}.png"
+        items_html += f"""
+            <div class="oracle-card" data-id="{team}">
+                <div class="rank-box">#<span class="num">{i+1}</span></div>
+                <img src="{logo_url}" onerror="this.src='{GITHUB_BASE}Aegis.png'">
+                <div class="team-label">{team}</div>
+                <div class="handle">⋮⋮</div>
+            </div>
+        """
+
+    html_code = f"""
+        <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+        <style>
+            body {{ margin: 0; font-family: -apple-system, system-ui, sans-serif; }}
+            .container {{ padding: 10px; background: #fcfcfc; }}
+            .oracle-card {{
+                display: flex; align-items: center; padding: 12px 16px;
+                background: white; border: 1px solid #d0d7de; border-radius: 8px;
+                margin-bottom: 8px; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            }}
+            .rank-box {{
+                background: #f6f8fa; color: #57606a; font-weight: bold;
+                padding: 4px 8px; border-radius: 4px; margin-right: 15px;
+                min-width: 35px; text-align: center; border: 1px solid #d0d7de;
+            }}
+            img {{ width: 28px; height: 28px; margin-right: 15px; object-fit: contain; }}
+            .team-label {{ font-weight: 600; color: #24292f; flex-grow: 1; }}
+            .handle {{ color: #d0d7de; font-size: 18px; }}
+            .sortable-ghost {{ opacity: 0.3; background: #f0f7ff; }}
+        </style>
+        
+        <div id="oracleList" class="container">
+            {items_html}
+        </div>
+
+        <script>
+            var el = document.getElementById('oracleList');
+            var sortable = Sortable.create(el, {{
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: function () {{
+                    var order = [];
+                    var items = el.querySelectorAll('.oracle-card');
+                    items.forEach(function(item, index) {{
+                        order.push(item.getAttribute('data-id'));
+                        item.querySelector('.num').innerText = index + 1;
+                    }});
+                    window.parent.postMessage({{
+                        type: 'streamlit:setComponentValue',
+                        value: order
+                    }}, '*');
+                }}
+            }});
+            // Initial send
+            var initialOrder = {team_list};
+            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: initialOrder}}, '*');
+        </script>
+    """
+    return components.html(html_code, height=900)
+
+# --- UI LAYOUT ---
+st.markdown(f"""
+    <div style="text-align: center; padding: 20px;">
+        <img src="{GITHUB_BASE}Aegis.png" width="80">
+        <h1 style="margin-top: 10px; color: #1a1a1a;">AEGIS ORACLE: SHANGHAI 2026</h1>
+    </div>
 """, unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4 = st.tabs(["LOCK IN", "LEADERBOARD", "MATRIX", "PROTOCOL"])
 
-# --- TAB 1: LOCK IN ---
 with tab1:
-    st.header("🔮 Prophecy Lock-In")
-    st.caption("Drag and drop to set your prediction. Ranks are assigned 1 to 16 from top to bottom.")
+    st.markdown("### 🔮 Rank Your Prophecy")
+    st.caption("Drag the teams to set your 1st through 16th place predictions.")
     
-    # We use a custom formatted list to include logos in the sortable interface
-    # Streamlit-sortables can't render HTML, so we show the name and preview logos below
+    # This single component replaces the two columns
+    user_order = unified_oracle_ranker(TEAMS)
     
-    col_main, col_spacer = st.columns([2, 1])
+    st.divider()
+    oracle_name = st.text_input("Oracle Name", placeholder="e.g. Frederik")
     
-    with col_main:
-        user_order = sort_items(TEAMS, direction="vertical", key="v9_final_stable")
-        
-        st.divider()
-        oracle_name = st.text_input("Oracle Name", placeholder="e.g. Frederik")
-        
-        if st.button("LOCK IN PROPHECY"):
-            if not oracle_name:
-                st.error("Please enter your name.")
-            elif not user_order:
-                st.error("Error capturing team order. Please refresh and try again.")
-            else:
-                # Format the data for the sheet
-                new_row = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ", ".join(user_order)
-                }])
-                
-                # Append and Update
-                updated_subs = pd.concat([subs_df, new_row], ignore_index=True)
-                conn.update(worksheet="Submissions", data=updated_subs)
-                
-                st.success(f"Prophecy locked for {oracle_name}!")
-                st.cache_data.clear()
+    if st.button("LOCK IN PROPHECY"):
+        if not oracle_name:
+            st.error("Please enter a name.")
+        elif user_order is None:
+            st.error("Please move one team to confirm the order.")
+        else:
+            new_row = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Oracle Name": oracle_name,
+                "Rankings": ", ".join(user_order)
+            }])
+            updated_df = pd.concat([subs_df, new_row], ignore_index=True)
+            conn.update(worksheet="Submissions", data=updated_df)
+            st.success(f"Prophecy recorded for {oracle_name}!")
+            st.cache_data.clear()
 
-    # The Visual Preview (The Logos you wanted)
-    with col_spacer:
-        st.subheader("Live Preview")
-        for i, team in enumerate(user_order):
-            st.markdown(f"""
-                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <span style="min-width: 30px; font-weight: bold; color: #57606a;">#{i+1}</span>
-                    <img src="{get_logo(team)}" width="24" style="margin-right: 10px;" onerror="this.src='{GITHUB_BASE}Aegis.png'">
-                    <span style="font-size: 14px;">{team}</span>
-                </div>
-            """, unsafe_allow_html=True)
-
-# --- TAB 2: LEADERBOARD ---
 with tab2:
     st.header("🏆 Leaderboard")
-    if subs_df.empty or "Oracle Name" not in subs_df.columns:
-        st.info("No submissions yet.")
-    else:
-        # Scoring Logic
+    if not subs_df.empty:
         latest = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        lb_data = []
+        lb = []
         for _, row in latest.iterrows():
             preds = row["Rankings"].split(", ")
-            penalty, perfects = 0, 0
+            score, hits = 0, 0
             if not res_df.empty:
                 for rank, team in enumerate(preds, 1):
                     match = res_df[res_df["Team"] == team]
                     if not match.empty:
-                        actual = int(match.iloc[0]["Rank"])
-                        if actual > 0:
-                            dist = abs(rank - actual)
-                            m = 4 if rank == 1 else (3 if rank == 2 else (2 if rank in [3,4] else 1))
-                            penalty += (dist * m)
-                            if dist == 0: perfects += 1
-            lb_data.append({"Oracle": row["Oracle Name"], "Score": penalty, "Bullseyes": perfects})
-        
-        st.dataframe(pd.DataFrame(lb_data).sort_values(["Score", "Bullseyes"], ascending=[True, False]), use_container_width=True)
+                        act = int(match.iloc[0]["Rank"])
+                        if act > 0:
+                            dist = abs(rank - act)
+                            m = 4 if rank==1 else (3 if rank==2 else (2 if rank in [3,4] else 1))
+                            score += (dist * m)
+                            if dist == 0: hits += 1
+            lb.append({"Oracle": row["Oracle Name"], "Penalty": score, "Bullseyes": hits})
+        st.table(pd.DataFrame(lb).sort_values(["Penalty", "Bullseyes"], ascending=[True, False]))
 
-# --- TAB 3: MATRIX ---
 with tab3:
     st.header("📊 Matrix")
     if not subs_df.empty:
         m_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        m_list = []
+        m_rows = []
         for _, row in m_subs.iterrows():
             r = row["Rankings"].split(", ")
-            e = {"Oracle": row["Oracle Name"]}
-            for i, t in enumerate(r): e[f"#{i+1}"] = t
-            m_list.append(e)
-        st.dataframe(pd.DataFrame(m_list), use_container_width=True)
+            entry = {"Oracle": row["Oracle Name"]}
+            for i, t in enumerate(r): entry[f"#{i+1}"] = t
+            m_rows.append(entry)
+        st.dataframe(pd.DataFrame(m_rows))
 
-# --- TAB 4: PROTOCOL ---
 with tab4:
     st.header("📜 Scoring Protocol")
     st.markdown("""
-    <div class="protocol-card">
-        <h3>1. The Multiplier Tiers</h3>
-        <ul>
-            <li><b>1st Place Prediction:</b> 4x Multiplier (High Stakes)</li>
-            <li><b>2nd Place Prediction:</b> 3x Multiplier</li>
-            <li><b>3rd - 4th Place Prediction:</b> 2x Multiplier</li>
-            <li><b>5th - 16th Place Prediction:</b> 1x Multiplier</li>
-        </ul>
-    </div>
-    <div class="protocol-card">
-        <h3>2. Fixed vs. Projected</h3>
-        <p><b>Fixed:</b> Final rank for eliminated teams.</p>
-        <p><b>Projected:</b> Minimum possible penalty for active teams.</p>
-    </div>
-    <div class="protocol-card">
-        <h3>3. Tie-Breakers</h3>
-        <p>1. Most 'Bullseyes' (Exact rank matches).</p>
-        <p>2. Lowest penalty in the Top 4 prediction bracket.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    ### 1. The Multiplier Tiers
+    - **Rank #1:** 4x Penalty
+    - **Rank #2:** 3x Penalty
+    - **Rank #3-4:** 2x Penalty
+    - **Rank #5-16:** 1x Penalty
+    
+    ### 2. Fixed vs. Projected
+    - **Fixed Scores:** Final rank for eliminated teams.
+    - **Projected Scores:** Minimum possible penalty for active teams.
+    """)
