@@ -7,16 +7,74 @@ from streamlit_sortables import sort_items
 # --- CONFIGURATION & THEME ---
 st.set_page_config(page_title="AEGIS ORACLE: 2026", layout="wide", initial_sidebar_state="collapsed")
 
+# Force Dark Mode with White Text and High Contrast
 st.markdown("""
     <style>
-    .main { background-color: #0d1117; color: #c9d1d9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #1f6feb; color: white; border: none; }
-    .stButton>button:hover { background-color: #388bfd; border: none; }
-    .rank-box { padding: 10px; border-radius: 10px; background: #161b22; border: 1px solid #30363d; margin-bottom: 10px; }
-    h3 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 20px; }
-    .team-logo { vertical-align: middle; margin-right: 10px; border-radius: 4px; }
-    .protocol-card { background: #161b22; padding: 20px; border-radius: 10px; border-left: 5px solid #1f6feb; margin-bottom: 15px; }
-    .multiplier-tag { background: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
+    /* Global Background and Text */
+    .main { 
+        background-color: #0d1117 !important; 
+        color: #ffffff !important; 
+    }
+    
+    /* Ensure all markdown text is white */
+    .stMarkdown, p, li, b, i, span {
+        color: #ffffff !important;
+    }
+
+    /* Titles and Subheaders */
+    h1, h2, h3, h4 {
+        color: #58a6ff !important;
+        font-weight: bold !important;
+    }
+
+    /* Protocol Cards - Darker background with pure white text */
+    .protocol-card { 
+        background: #161b22 !important; 
+        padding: 25px; 
+        border-radius: 10px; 
+        border: 1px solid #30363d;
+        border-left: 5px solid #1f6feb !important; 
+        margin-bottom: 20px;
+    }
+    
+    .protocol-card h3 {
+        margin-top: 0px !important;
+        color: #58a6ff !important;
+    }
+
+    /* Multiplier Tags */
+    .multiplier-tag { 
+        background: #238636 !important; 
+        color: #ffffff !important; 
+        padding: 2px 10px; 
+        border-radius: 12px; 
+        font-size: 0.85em; 
+        font-weight: bold; 
+    }
+
+    /* Tables and Dataframes */
+    .stTable, .stDataFrame {
+        background-color: #0d1117 !important;
+    }
+    
+    /* Team Logos */
+    .team-logo { 
+        vertical-align: middle; 
+        margin-right: 10px; 
+        border-radius: 4px; 
+        background-color: transparent;
+    }
+    
+    /* Buttons */
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 5px; 
+        height: 3em; 
+        background-color: #1f6feb !important; 
+        color: white !important; 
+        border: none;
+        font-weight: bold;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,9 +183,9 @@ with tab2:
         live_standings = res_df[res_df['Rank'] > 0].sort_values("Rank")
         if not live_standings.empty:
             cols = st.columns(4)
-            for idx, row in live_standings.iterrows():
-                logo = LOGOS.get(row['Team'], "")
-                cols[idx % 4].markdown(f"**#{row['Rank']}** <img src='{logo}' width='20' class='team-logo'> {row['Team']}", unsafe_allow_html=True)
+            for idx, row in enumerate(live_standings.itertuples()):
+                logo = LOGOS.get(row.Team, "")
+                cols[idx % 4].markdown(f"**#{row.Rank}** <img src='{logo}' width='20' class='team-logo'> {row.Team}", unsafe_allow_html=True)
         else: st.info("Tournament hasn't started. No official ranks assigned yet.")
 
     st.subheader("🏅 Oracle Leaderboard")
@@ -136,8 +194,8 @@ with tab2:
         for _, row in subs_df.iterrows():
             p_list = row['Rankings'].split(',')
             f_score, p_score = calculate_dual_scores(p_list, res_df)
-            leaderboard.append({"Oracle": row['Oracle Name'], "Fixed Score": f_score, "Projected Score": p_score, "Updated": row['Timestamp']})
-        lb_df = pd.DataFrame(leaderboard).sort_values("Projected Score", ascending=True)
+            leaderboard.append({"Oracle": row['Oracle Name'], "Fixed": f_score, "Projected": p_score})
+        lb_df = pd.DataFrame(leaderboard).sort_values("Projected", ascending=True)
         st.table(lb_df)
 
 with tab3:
@@ -154,9 +212,9 @@ with tab4:
     st.markdown("""
     <div class='protocol-card'>
     <h3>⛳ Golf Scoring</h3>
-    Your score is the <b>absolute difference</b> between your predicted rank and the team's official finish. 
-    <br><i>Example: You predict Liquid at #1, they finish at #3. Your base penalty is 2 points.</i>
-    <br><b>LOWEST SCORE WINS.</b>
+    <p>Your score is the <b>absolute difference</b> between your predicted rank and the team's official finish.</p>
+    <p><i>Example: You predict Liquid at #1, they finish at #3. Your base penalty is 2 points.</i></p>
+    <p><b>LOWEST SCORE WINS.</b></p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -165,7 +223,7 @@ with tab4:
         st.markdown("""
         <div class='protocol-card'>
         <h3>🔥 High-Stakes Multipliers</h3>
-        The higher you rank a team, the more accurate you must be. Penalties are multiplied for top spots:
+        <p>Penalties are multiplied for top spots:</p>
         <ul>
             <li><b>1st Place:</b> Penalty x 4 <span class='multiplier-tag'>CRITICAL</span></li>
             <li><b>2nd Place:</b> Penalty x 3</li>
@@ -180,8 +238,8 @@ with tab4:
         <div class='protocol-card'>
         <h3>📊 Score Definitions</h3>
         <ul>
-            <li><b>Fixed Score:</b> Points accumulated from teams who have been officially <b>Eliminated</b> or reached the <b>Final</b>. This score will never decrease.</li>
-            <li><b>Projected Score:</b> Your "Live" score based on current tournament standings. This will fluctuate until the final match is over.</li>
+            <li><b>Fixed Score:</b> Points from teams officially <b>Eliminated</b>. This score never decreases.</li>
+            <li><b>Projected Score:</b> Live score based on current positions.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
