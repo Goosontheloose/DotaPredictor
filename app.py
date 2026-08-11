@@ -136,18 +136,14 @@ with tabs[1]:
             for i, team in enumerate(preds):
                 p_rank = i + 1
                 a_rank = int(actual_ranks.get(team, 0))
-                
-                # Check status: We only care about the word "Completed"
                 status_val = str(raw_statuses.get(team, 'Active')).strip().lower()
                 
                 if a_rank > 0:
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
-                    
                     p_score += penalty
                     if status_val == 'completed':
                         f_score += penalty
-                    
                     if p_rank == a_rank:
                         perfect += 1
             
@@ -157,7 +153,9 @@ with tabs[1]:
                 "Projected Score": int(p_score), 
                 "Perfect Picks": perfect
             })
-        st.table(pd.DataFrame(lb).sort_values(["Projected Score", "Perfect Picks"], ascending=[True, False]))
+        # Sorting by Projected Score (Ascending) and then Perfect Picks (Descending)
+        df_lb = pd.DataFrame(lb).sort_values(["Projected Score", "Perfect Picks"], ascending=[True, False])
+        st.dataframe(df_lb, hide_index=True, use_container_width=True)
     else:
         st.info("Awaiting tournament results.")
 
@@ -171,7 +169,7 @@ with tabs[2]:
             d = {"Oracle": row['Oracle Name']}
             for i, team in enumerate(p): d[f"#{i+1}"] = team
             m_rows.append(d)
-        st.dataframe(pd.DataFrame(m_rows), hide_index=True)
+        st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
 with tabs[3]:
     st.subheader("The Oracle Protocol")
