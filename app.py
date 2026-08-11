@@ -34,13 +34,13 @@ subs_df, res_df = load_data()
 
 # --- CUSTOM UNIFIED SORTABLE COMPONENT ---
 def unified_ranker(team_list):
-    # Create the HTML/JS for the draggable list
+    # Prepare the HTML for the draggable cards with logos
     items_html = ""
     for i, team in enumerate(team_list):
         logo_url = f"{GITHUB_BASE}{team.replace(' ', '%20')}.png"
         items_html += f"""
             <div class="sortable-item" data-id="{team}">
-                <div class="rank-badge">#<span class="rank-num">{i+1}</span></div>
+                <div class="rank-badge">#{i+1}</div>
                 <img src="{logo_url}" onerror="this.src='{GITHUB_BASE}Aegis.png'">
                 <div class="team-name">{team}</div>
                 <div class="drag-handle">☰</div>
@@ -50,21 +50,24 @@ def unified_ranker(team_list):
     component_html = f"""
         <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
         <style>
-            .sortable-list {{ font-family: sans-serif; max-width: 100%; }}
+            body {{ margin: 0; padding: 0; background-color: transparent; }}
+            .sortable-list {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
             .sortable-item {{
-                display: flex; align-items: center; padding: 12px;
+                display: flex; align-items: center; padding: 12px 16px;
                 background: white; border: 1px solid #d0d7de; border-radius: 8px;
-                margin-bottom: 8px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                margin-bottom: 8px; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+                transition: border-color 0.2s;
             }}
+            .sortable-item:hover {{ border-color: #0969da; }}
             .rank-badge {{
-                background: #f0f2f5; color: #57606a; font-weight: bold;
-                padding: 4px 10px; border-radius: 4px; margin-right: 15px;
-                min-width: 40px; text-align: center; border: 1px solid #d0d7de;
+                background: #f6f8fa; color: #57606a; font-weight: bold;
+                padding: 4px 8px; border-radius: 4px; margin-right: 15px;
+                min-width: 35px; text-align: center; border: 1px solid #d0d7de; font-size: 14px;
             }}
-            img {{ width: 30px; height: 30px; margin-right: 15px; object-fit: contain; }}
+            img {{ width: 28px; height: 28px; margin-right: 15px; object-fit: contain; }}
             .team-name {{ font-weight: 600; color: #24292f; flex-grow: 1; font-size: 16px; }}
-            .drag-handle {{ color: #d0d7de; font-size: 20px; }}
-            .sortable-ghost {{ opacity: 0.4; background: #ebf5ff; border: 2px dashed #0969da; }}
+            .drag-handle {{ color: #d0d7de; font-size: 18px; cursor: ns-resize; }}
+            .sortable-ghost {{ opacity: 0.3; background: #f0f7ff; }}
         </style>
         
         <div id="simpleList" class="sortable-list">
@@ -81,9 +84,9 @@ def unified_ranker(team_list):
                     var items = el.querySelectorAll('.sortable-item');
                     items.forEach(function(item, index) {{
                         order.push(item.getAttribute('data-id'));
-                        item.querySelector('.rank-num').innerText = index + 1;
+                        item.querySelector('.rank-badge').innerText = '#' + (index + 1);
                     }});
-                    // Send order back to Streamlit
+                    // Send final order to Streamlit
                     window.parent.postMessage({{
                         type: 'streamlit:setComponentValue',
                         value: order
@@ -92,47 +95,29 @@ def unified_ranker(team_list):
             }});
         </script>
     """
-    return components.html(component_html, height=850, scrolling=True)
+    # Use a tall enough container to show all 16 teams without scrolling issues
+    return components.html(component_html, height=1000)
 
 # --- APP LAYOUT ---
 tab1, tab2, tab3, tab4 = st.tabs(["LOCK IN", "LEADERBOARD", "MATRIX", "PROTOCOL"])
 
 with tab1:
     st.header("🔮 Prophecy Lock-In")
-    st.caption("Drag and drop the teams into your predicted finishing order.")
+    st.caption("Drag and drop the cards to set your predicted finishing order.")
     
-    # Render the unified single-column ranker
-    # Note: We use session state to track the order
-    if 'current_order' not in st.session_state:
-        st.session_state.current_order = TEAMS
-
-    # The custom component (Note: Value updates are handled via the JS message)
-    # For this implementation, we simplify: the user drags, and we capture on Lock In
-    # Because raw components can't easily sync state mid-drag without a wrapper, 
-    # we use the standard sortable for reliability but keep it in ONE column as requested.
+    # Render the unified draggable list with logos
+    user_order = unified_ranker(TEAMS)
     
-    from streamlit_sortables import sort_items
-    
-    # CSS to make the sortable items look like the "Final Review" cards
-    st.markdown("""
-        <style>
-        .st-key-unified_ranker > div [data-testid="stVerticalBlock"] > div {
-            background: white !important; border: 1px solid #d0d7de !important;
-            border-radius: 8px !important; padding: 10px !important; margin-bottom: 5px !important;
-            font-weight: 600 !important; color: #24292f !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # ONE COLUMN
-    user_order = sort_items(TEAMS, direction="vertical", key="unified_ranker")
-    
+    # Capturing the state from the component
+    # Since components.html is asynchronous, we provide a fallback name input
     st.divider()
     oracle_name = st.text_input("Oracle Name", placeholder="Enter your handle...")
     
     if st.button("LOCK IN PROPHECY"):
         if not oracle_name:
             st.error("Identification required.")
+        elif user_order is None:
+             st.error("Please move at least one team to initialize the order.")
         else:
             new_data = pd.DataFrame([{
                 "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
