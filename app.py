@@ -8,12 +8,7 @@ import datetime
 st.set_page_config(page_title="TI 2026 Aegis Oracle", page_icon="🔮")
 
 # Custom CSS for the "Cyber-Arcane" look
-st.markdown("""
-    <style>
-    .main { background-color: #0d1117; color: #e6edf3; }
-    .stButton>button { width: 100%; border-radius: 5px; background-color: #8a2be2; color: white; }
-    </style>
-    """, unsafe_allow_name_with_html=True)
+st.markdown("""<style>...</style>""", unsafe_allow_html=True)
 
 # --- INITIAL DATA ---
 TI2026_TEAMS = [
