@@ -18,7 +18,7 @@ TEAMS = [
     "Aurora", "GamerLegion", "Yandex", "Huligani"
 ]
 
-st.set_page_config(page_title="AEGIS ORACLE 2026", layout="centered")
+st.set_page_config(page_title="The International Prediction 2026", layout="centered")
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -96,13 +96,13 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-tabs = st.tabs(["🔮 LOCK-IN", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
+tabs = st.tabs(["🔮 LOCK-IN", "🏆 Leaderboard", "🧬 Submitted", "📜 Scoring"])
 
 with tabs[0]:
     oracle_name = st.text_input("Oracle Name", placeholder="Enter your name to secure your prophecy...")
     unified_prediction_ui(TEAMS)
     
-    if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
+    if st.button("Submit", type="primary", use_container_width=True):
         final_order_str = st.query_params.get("order", ",".join(TEAMS))
         if not oracle_name:
             st.error("Please enter your name.")
@@ -160,7 +160,7 @@ with tabs[1]:
         st.info("Awaiting tournament results.")
 
 with tabs[2]:
-    st.subheader("Prediction Matrix")
+    st.subheader("Submitted Predictions")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
@@ -172,7 +172,7 @@ with tabs[2]:
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
 with tabs[3]:
-    st.subheader("The Oracle Protocol")
+    st.subheader("Scoring")
     st.markdown("""
     ### ⛳ Golf Scoring Logic
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
