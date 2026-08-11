@@ -5,7 +5,7 @@ from streamlit_sortables import sort_items
 from datetime import datetime
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="AEGIS ORACLE: SHANGHAI 2026", layout="wide")
+st.set_page_config(page_title="AEGIS ORACLE: SHANGHAI 2026", layout="centered")
 
 # THE EXACT 16 TEAMS
 TEAMS = [
@@ -18,7 +18,9 @@ TEAMS = [
 GITHUB_BASE = "https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/"
 
 def get_logo(team_name):
-    return f"{GITHUB_BASE}{team_name.replace(' ', '%20')}.png"
+    # Try to match the most likely filename format (No spaces)
+    clean_name = team_name.replace(" ", "")
+    return f"{GITHUB_BASE}{clean_name}.png"
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -38,56 +40,52 @@ subs_df, res_df = load_data()
 st.markdown(f"""
     <div style="text-align: center; padding-bottom: 20px;">
         <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #1a1a1a;">AEGIS ORACLE: SHANGHAI 2026</h1>
+        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">AEGIS ORACLE: SHANGHAI 2026</h1>
     </div>
 """, unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4 = st.tabs(["LOCK IN", "LEADERBOARD", "MATRIX", "PROTOCOL"])
 
-# --- TAB 1: LOCK IN (The logic that works) ---
+# --- TAB 1: LOCK IN ---
 with tab1:
     st.markdown("### 🔮 Forge Your Prophecy")
     
-    # 2-Column Layout: Left for the Draggable Names, Right for the Logos
-    col_rank, col_preview = st.columns([1, 1])
+    # ONE COLUMN FLOW
+    st.subheader("1. Reorder Your Teams")
+    user_order = sort_items(TEAMS, direction="vertical", key="stable_ranker_final")
     
-    with col_rank:
-        st.subheader("1. Reorder Names")
-        # This component is reliable and will NOT cause a TypeError
-        user_order = sort_items(TEAMS, direction="vertical", key="stable_ranker_v1")
-        
-        st.divider()
-        oracle_name = st.text_input("Oracle Name", placeholder="e.g. Frederik")
-        
-        if st.button("LOCK IN PROPHECY"):
-            if not oracle_name:
-                st.error("Please enter a name to secure your prophecy.")
-            else:
-                # This direct join is safe because user_order is a standard list
-                rank_string = ", ".join(user_order)
-                
-                new_data = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": rank_string
-                }])
-                
-                updated_df = pd.concat([subs_df, new_data], ignore_index=True)
-                conn.update(worksheet="Submissions", data=updated_df)
-                
-                st.success(f"Prophecy recorded for {oracle_name}!")
-                st.cache_data.clear()
-
-    with col_preview:
-        st.subheader("2. Live Preview")
-        for i, team in enumerate(user_order):
+    st.divider()
+    
+    st.subheader("2. Review & Submit")
+    # This creates a tight, visual list right before they hit submit
+    preview_cols = st.columns(2)
+    for i, team in enumerate(user_order):
+        with preview_cols[i % 2]:
             st.markdown(f"""
-                <div style="display: flex; align-items: center; margin-bottom: 10px; padding: 5px; border-bottom: 1px solid #eee;">
-                    <span style="width: 35px; font-weight: bold; color: #666;">#{i+1}</span>
-                    <img src="{get_logo(team)}" width="28" style="margin-right: 15px;" onerror="this.src='{GITHUB_BASE}Aegis.png'">
-                    <span style="font-weight: 500;">{team}</span>
+                <div style="display: flex; align-items: center; margin-bottom: 8px; padding: 10px; background: white; border: 1px solid #eee; border-radius: 8px;">
+                    <span style="font-weight: bold; color: #666; margin-right: 10px;">#{i+1}</span>
+                    <img src="{get_logo(team)}" width="24" height="24" style="margin-right: 10px; object-fit: contain;" onerror="this.src='{GITHUB_BASE}Aegis.png'">
+                    <span style="font-size: 14px;">{team}</span>
                 </div>
             """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    oracle_name = st.text_input("Oracle Name", placeholder="Who are you?")
+    
+    if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
+        if not oracle_name:
+            st.error("Identification required.")
+        else:
+            rank_string = ", ".join(user_order)
+            new_data = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Oracle Name": oracle_name,
+                "Rankings": rank_string
+            }])
+            updated_df = pd.concat([subs_df, new_data], ignore_index=True)
+            conn.update(worksheet="Submissions", data=updated_df)
+            st.success(f"Prophecy Secure. Good luck, {oracle_name}!")
+            st.cache_data.clear()
 
 # --- TAB 2: LEADERBOARD ---
 with tab2:
@@ -113,7 +111,7 @@ with tab2:
 
 # --- TAB 3: MATRIX ---
 with tab3:
-    st.header("📊 Matrix")
+    st.header("📊 Comparison Matrix")
     if not subs_df.empty:
         m_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
@@ -129,17 +127,13 @@ with tab4:
     st.header("📜 Scoring Protocol")
     st.markdown("""
     ### 1. High-Stakes Multipliers
-    Penalty points (distance from actual rank) are multiplied based on your prediction:
+    Penalty points (distance from actual rank) are multiplied:
     - **Rank #1:** 4x Multiplier
     - **Rank #2:** 3x Multiplier
     - **Rank #3-4:** 2x Multiplier
-    - **Rank #5-16:** 1x Multiplier (Base)
+    - **Rank #5-16:** 1x Multiplier
     
     ### 2. Fixed vs. Projected
-    - **Fixed:** The team has been eliminated and their rank is final.
-    - **Projected:** While a team is still playing, we calculate the minimum possible penalty they can receive.
-    
-    ### 3. Tie-Breakers
-    1. **Bullseyes:** Total number of exact rank matches.
-    2. **Top Tier Accuracy:** Lowest penalty within your predicted Top 4.
+    - **Fixed:** Team is eliminated.
+    - **Projected:** Active teams show the best possible outcome.
     """)
