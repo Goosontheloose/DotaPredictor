@@ -1,179 +1,141 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# --- 1. UI CONFIG & SHANGHAI TECH THEME ---
-st.set_page_config(page_title="Aegis Oracle: TI 2026", layout="wide", page_icon="🔮")
+# --- UI CONFIG ---
+st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide", page_icon="🏮")
 
+# --- SHANGHAI SHADOW-TECH CSS ---
 st.markdown("""
     <style>
-    /* Main Background and Text */
-    .main { background-color: #0b0e14; color: #e0e0e0; }
-    
-    /* Custom Buttons */
-    .stButton>button { 
-        background: linear-gradient(90deg, #00f2ff, #7000ff); 
-        color: white; border: none; border-radius: 5px; width: 100%; font-weight: bold;
-    }
-    
-    /* Leaderboard Cards */
-    .leaderboard-card {
-        background: rgba(255, 255, 255, 0.03);
-        border-left: 5px solid #00f2ff;
-        padding: 20px; border-radius: 10px; margin-bottom: 15px;
-        transition: 0.3s;
-    }
-    .leaderboard-card:hover { background: rgba(255, 255, 255, 0.08); }
-    
-    /* Headers */
-    h1, h2, h3 { color: #00f2ff !important; font-family: 'Courier New', monospace; text-transform: uppercase; letter-spacing: 2px; }
-    
-    /* Metric styling */
-    [data-testid="stMetricValue"] { color: #7000ff !important; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@900&family=JetBrains+Mono&display=swap');
+    .main { background-color: #0b0e14; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+    h1, h2 { color: #00f2ff !important; text-transform: uppercase; letter-spacing: 3px; font-family: 'Inter'; }
+    .stMetric { background: rgba(112, 0, 255, 0.1); border: 1px solid #7000ff; padding: 15px; border-radius: 5px; }
+    [data-testid="stMetricValue"] { color: #00f2ff !important; font-family: 'JetBrains Mono'; }
+    .leaderboard-row { border-bottom: 1px solid #1a1d23; padding: 10px 0; }
+    .status-locked { color: #ff4b4b; font-weight: bold; }
+    .status-play { color: #00f2ff; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA CONNECTIONS ---
+# --- CONNECTIONS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 3. THE AUTO-ARBITER (SCRAPER) ---
-def run_auto_scrape():
-    """Targeting TI 2024/2025 for calibration testing."""
-    url = "https://liquipedia.net/dota2/The_International/2024" 
-    headers = {'User-Agent': 'AegisOracle-Bot-2.0'}
+# --- SCORING LOGIC ---
+def calculate_score(predictions, actual_results):
+    """
+    Points = ABS(Pred - Actual) * Multiplier
+    Multipliers: 1st=4x, 2nd=3x, 3rd/4th=2x, rest=1x
+    """
+    actual_map = dict(zip(actual_results['Team'], actual_results['Rank']))
+    total_pts = 0
     
-    try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        table = soup.find('table', {'class': 'wikitable'})
-        
-        data = []
-        for row in table.find_all('tr')[1:]:
-            cols = row.find_all('td')
-            if len(cols) >= 2:
-                # Rank logic (handles '1st', '2nd', '3rd-4th')
-                rank_raw = cols[0].text.strip().split('-')[0]
-                rank_num = ''.join(filter(str.isdigit, rank_raw))
-                # Team Name logic
-                team_name = cols[1].find('span', {'class': 'team-template-text'}).text.strip()
-                
-                if rank_num and team_name:
-                    data.append({"Team": team_name, "Rank": int(rank_num)})
-        
-        return pd.DataFrame(data).sort_values("Rank")
-    except Exception as e:
-        st.error(f"Scraper Offline: {e}")
-        return None
-
-def sync_with_google_sheets():
-    """On-demand sync logic."""
-    try:
-        meta = conn.read(worksheet="Metadata", ttl=0)
-        last_update = datetime.strptime(meta.iloc[0, 0], "%Y-%m-%d %H:%M:%S")
-        
-        if datetime.now() - last_update > timedelta(minutes=30):
-            with st.spinner("Scrying Liquipedia for latest standings..."):
-                new_results = run_auto_scrape()
-                if new_results is not None:
-                    # Update 'Results' tab
-                    conn.update(worksheet="Results", data=new_results)
-                    # Update 'Metadata' timestamp
-                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    conn.update(worksheet="Metadata", data=pd.DataFrame({"LastUpdate": [now_str]}))
-                    st.toast("Oracle Synchronized!")
-    except:
-        st.warning("Metadata tab is empty or missing. Check your Google Sheet.")
-
-# --- 4. THE SCORING ENGINE ---
-def calculate_oracle_score(pred_list, actual_df):
-    actual_dict = dict(zip(actual_df['Team'], actual_df['Rank']))
-    total_score = 0
-    details = []
-    
-    for i, team in enumerate(pred_list):
+    for i, team in enumerate(predictions):
         pred_rank = i + 1
-        official_rank = int(actual_dict.get(team, 0))
+        real_rank = actual_map.get(team, 0)
         
-        if official_rank == 0: continue
+        if real_rank == 0: continue # Team not in results yet
         
-        # Multipliers
         multiplier = 1
         if pred_rank == 1: multiplier = 4
         elif pred_rank == 2: multiplier = 3
         elif pred_rank in [3, 4]: multiplier = 2
         
-        gap = abs(pred_rank - official_rank)
-        points = gap * multiplier
-        total_score += points
-        details.append({"Team": team, "Prediction": pred_rank, "Actual": official_rank, "Multiplier": f"{multiplier}x", "Points": points})
+        total_pts += abs(pred_rank - real_rank) * multiplier
         
-    return total_score, pd.DataFrame(details)
+    return total_pts
 
-# --- 5. MAIN APP INTERFACE ---
-st.title("🏮 AEGIS ORACLE: SHANGHAI 2026")
-sync_with_google_sheets()
+# --- DATA FETCHING ---
+try:
+    results_df = conn.read(worksheet="Results", ttl=0)
+    subs_df = conn.read(worksheet="Submissions", ttl=0)
+except Exception as e:
+    st.error(f"⚠️ CONNECTION BREACH: Ensure 'Results' and 'Submissions' tabs exist. {e}")
+    st.stop()
 
-tab1, tab2, tab3 = st.tabs(["🏆 LEADERBOARD", "🔮 LOCK PROPHECY", "📊 LIVE DATA"])
+# --- HEADER SECTION ---
+col1, col2 = st.columns([2, 1])
+with col1:
+    st.title("🏮 AEGIS ORACLE: SHANGHAI 2026")
+    st.caption("ULTIMATE TOURNAMENT PREDICTION TERMINAL")
+
+with col2:
+    if not results_df.empty:
+        locked_count = len(results_df[results_df['Status'] == 'Locked'])
+        st.metric("TOURNAMENT PROGRESS", f"{locked_count}/16 LOCKED")
+
+# --- MAIN INTERFACE ---
+tab1, tab2, tab3 = st.tabs(["🏆 ORACLE LEADERBOARD", "📋 PREDICTOR STANDINGS", "🛠 ARBITER VIEW"])
 
 with tab1:
-    st.subheader("Global Oracle Standings")
-    try:
-        results_df = conn.read(worksheet="Results", ttl=0)
-        subs_df = conn.read(worksheet="Submissions", ttl=0)
+    st.subheader("CURRENT SCOREBOARD")
+    if not subs_df.empty and not results_df.empty:
+        scores = []
+        for _, row in subs_df.iterrows():
+            pred_list = row['Rankings'].split(",")
+            total = calculate_score(pred_list, results_df)
+            scores.append({"Oracle": row['Oracle Name'], "Total Penalty Points": total})
         
-        if not subs_df.empty:
-            leaderboard_data = []
-            for _, row in subs_df.iterrows():
-                p_list = row['Rankings'].split(",")
-                score, detail_df = calculate_oracle_score(p_list, results_df)
-                leaderboard_data.append({"Name": row['Oracle Name'], "Score": score, "Data": detail_df})
+        score_df = pd.DataFrame(scores).sort_values("Total Penalty Points")
+        
+        # Display large metrics for the top 3
+        cols = st.columns(len(score_df))
+        for i, (idx, row) in enumerate(score_df.iterrows()):
+            cols[i].metric(row['Oracle'], f"{row['Total Penalty Points']} PTS")
             
-            # Sort: Lowest Score = Rank 1
-            lb_sorted = sorted(leaderboard_data, key=lambda x: x['Score'])
-            
-            for rank, entry in enumerate(lb_sorted, 1):
-                with st.expander(f"RANK #{rank} | {entry['Name']} — {entry['Score']} Points"):
-                    st.table(entry['Data'])
-        else:
-            st.info("The Oracle awaits your first prediction in the 'Lock Prophecy' tab.")
-    except:
-        st.error("Connection lost. Verify Google Sheet permissions.")
+        st.table(score_df)
+    else:
+        st.info("Awaiting predictions and results...")
 
 with tab2:
-    st.subheader("Enter the Prediction Arena")
-    # Fetch team names for the picker
-    teams_for_picker = results_df['Team'].tolist() if 'results_df' in locals() else []
-    
-    with st.form("submission_form"):
-        oracle_name = st.text_input("Enter Oracle Name (Ruben, Stok, Frederik):")
-        st.write("Rank the teams from 1st to 16th (Select in order):")
-        user_picks = st.multiselect("Sequence of Victory:", teams_for_picker)
-        
-        if st.form_submit_button("LOCK IN PROPHECY"):
-            if len(user_picks) != len(teams_for_picker):
-                st.warning(f"Prophecy incomplete. You must rank all {len(teams_for_picker)} teams.")
-            elif not oracle_name:
-                st.warning("Identity required to enter the leaderboard.")
-            else:
-                new_row = pd.DataFrame([{
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Oracle Name": oracle_name,
-                    "Rankings": ",".join(user_picks)
-                }])
-                existing = conn.read(worksheet="Submissions")
-                updated = pd.concat([existing, new_row], ignore_index=True)
-                conn.update(worksheet="Submissions", data=updated)
-                st.success("Your vision has been recorded in the cloud.")
-                st.rerun()
+    st.subheader("THE PREDICTIONS")
+    if not subs_df.empty:
+        for _, row in subs_df.iterrows():
+            with st.expander(f"VIEW PROPHECY: {row['Oracle Name']}"):
+                p_list = row['Rankings'].split(",")
+                for i, team in enumerate(p_list):
+                    st.write(f"**{i+1}.** {team}")
+    else:
+        st.info("No prophecies locked in.")
 
 with tab3:
-    st.subheader("Current Tournament Data")
-    if 'results_df' in locals():
-        st.dataframe(results_df, use_container_width=True, hide_index=True)
-    
-    st.sidebar.markdown("### SYSTEM STATUS")
-    st.sidebar.write(f"Last Sync: {datetime.now().strftime('%H:%M:%S')}")
-    st.sidebar.info("Auto-Arbiter: ONLINE")
+    st.subheader("GRAND ARBITER TERMINAL (LIVE RESULTS)")
+    if not results_df.empty:
+        # Display the current results with status colors
+        styled_df = results_df.copy()
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            column_config={
+                "Status": st.column_config.TextColumn("Status", help="Locked = Final Result, In-Play = Estimate")
+            }
+        )
+        st.info("💡 To update these rankings, edit your Google Sheet directly. The app will refresh automatically.")
+    else:
+        st.warning("No teams found in 'Results' tab.")
+
+# --- SIDEBAR SUBMISSION ---
+with st.sidebar:
+    st.header("LOCK IN PROPHECY")
+    with st.form("oracle_submission"):
+        oracle_name = st.text_input("Name (e.g., Ruben, Stok, Frederik)")
+        # Get list of teams from Results tab
+        team_pool = results_df['Team'].tolist() if not results_df.empty else []
+        ranked_selection = st.multiselect("Select Teams in order (1st to 16th)", team_pool)
+        
+        if st.form_submit_button("LOCK IN"):
+            if len(ranked_selection) == 16 and oracle_name:
+                new_sub = pd.DataFrame([{
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Oracle Name": oracle_name,
+                    "Rankings": ",".join(ranked_selection)
+                }])
+                # Append to existing
+                updated_subs = pd.concat([subs_df, new_sub], ignore_index=True)
+                conn.update(worksheet="Submissions", data=updated_subs)
+                st.success("Prophecy encrypted and stored.")
+                st.rerun()
+            else:
+                st.error("You must rank all 16 teams.")
