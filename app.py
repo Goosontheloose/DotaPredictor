@@ -7,7 +7,7 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="AEGIS ORACLE: SHANGHAI 2026", layout="wide")
 
-# THE EXACT 16 TEAMS
+# THE EXACT 16 TEAMS FROM YOUR LIST
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
     "BoomBoys", "OG", "Team Vision", "Resilience",
@@ -34,54 +34,35 @@ def load_data():
 
 subs_df, res_df = load_data()
 
-# --- SHANGHAI SHADOW-TECH UI STYLING ---
-st.markdown(f"""
+# --- CLEAN LIGHT UI STYLING ---
+st.markdown("""
     <style>
-    .stApp {{
-        background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
-        color: #c9d1d9;
-    }}
-    [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
+    /* Main Layout */
+    .stApp { background-color: #fcfcfc; color: #1a1a1a; }
     
-    /* Navigation Tabs */
-    .stTabs [data-baseweb="tab-list"] {{
-        gap: 24px;
-        background-color: transparent;
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        height: 50px;
-        background-color: transparent !important;
-        border: none !important;
-        color: #8b949e !important;
-        font-weight: 600;
-    }}
-    .stTabs [aria-selected="true"] {{
-        color: #00F5FF !important;
-        border-bottom: 2px solid #00F5FF !important;
-    }}
+    /* Buttons */
+    .stButton>button { 
+        width: 100%; border-radius: 4px; height: 3.5em; 
+        background-color: #2ea44f; color: white; font-weight: bold; border: none;
+    }
+    .stButton>button:hover { background-color: #2c974b; }
 
-    /* Team Cards */
-    .team-card {{ 
-        display: flex; align-items: center; padding: 12px 16px; 
-        background: rgba(255, 255, 255, 0.05); 
-        border: 1px solid rgba(0, 245, 255, 0.1); 
-        border-radius: 12px; margin-bottom: 8px;
-        transition: transform 0.2s ease;
-    }}
-    .team-card:hover {{ border: 1px solid #00F5FF; transform: translateX(5px); }}
+    /* Team Cards (Light Style) */
+    .team-card { 
+        display: flex; align-items: center; padding: 10px 15px; 
+        background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px; 
+        margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .rank-badge {
+        background: #f0f2f5; color: #57606a; font-weight: bold;
+        padding: 3px 10px; border-radius: 4px; margin-right: 15px; 
+        min-width: 40px; text-align: center; border: 1px solid #d0d7de;
+    }
     
-    .rank-badge {{
-        background: linear-gradient(90deg, #00F5FF, #00D1FF);
-        color: #0d1117; font-weight: 800;
-        padding: 4px 10px; border-radius: 6px; margin-right: 20px; 
-        min-width: 45px; text-align: center; font-family: monospace;
-    }}
-    
-    .stButton>button {{
-        background: linear-gradient(90deg, #FF4B4B, #D10000);
-        color: white; border: none; font-weight: 800; border-radius: 8px;
-        height: 3.5em; text-transform: uppercase; letter-spacing: 1px;
-    }}
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
+    .stTabs [data-baseweb="tab"] { font-weight: 600; color: #57606a; }
+    .stTabs [aria-selected="true"] { color: #0969da !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -89,24 +70,22 @@ tab1, tab2, tab3, tab4 = st.tabs(["LOCK IN", "LEADERBOARD", "MATRIX", "PROTOCOL"
 
 # --- TAB 1: LOCK IN ---
 with tab1:
-    st.markdown("<h1 style='text-align: center; color: #00F5FF; letter-spacing: 2px;'>🔮 SHANGHAI ORACLE PROTOCOL</h1>", unsafe_allow_html=True)
-    st.write("---")
-    
+    st.header("🔮 Prophecy Lock-In")
     col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
-        st.markdown("### <span style='color:#00F5FF'>01</span> REORDER BRACKET", unsafe_allow_html=True)
-        st.caption("Drag teams to your predicted finishing positions (1-16).")
+        st.subheader("1. Rank the Teams")
+        st.caption("Drag and drop to set your predicted finishing order.")
         
-        # Bidirectional sortable list
-        current_order = sort_items(TEAMS, direction="vertical", key="shanghai_v6_final")
+        # Interactive Sortable
+        current_order = sort_items(TEAMS, direction="vertical", key="clean_ranker_v1")
         
-        st.write("---")
-        oracle_name = st.text_input("ORACLE IDENTIFIER", placeholder="Enter your name or handle...")
+        st.divider()
+        oracle_name = st.text_input("Your Oracle Name", placeholder="Enter handle...")
         
-        if st.button("LOCK IN PROPHECY"):
+        if st.button("LOCK IN PREDICTIONS"):
             if not oracle_name:
-                st.warning("Identity required to secure prophecy.")
+                st.error("Please provide a name to identify your prophecy.")
             else:
                 new_entry = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -115,80 +94,75 @@ with tab1:
                 }])
                 updated_df = pd.concat([subs_df, new_entry], ignore_index=True)
                 conn.update(worksheet="Submissions", data=updated_df)
-                st.success(f"Prophecy Encrypted. Welcome, {oracle_name}.")
+                st.success(f"Prophecy saved for {oracle_name}!")
                 st.cache_data.clear()
 
     with col2:
-        st.markdown("### <span style='color:#00F5FF'>02</span> PROPHECY RECEIPT", unsafe_allow_html=True)
-        # Dynamic preview based on the current drag-and-drop state
+        st.subheader("2. Final Review")
         for i, team in enumerate(current_order):
             st.markdown(f"""
                 <div class="team-card">
-                    <span class="rank-badge">RANK {i+1}</span>
-                    <img src="{get_logo(team)}" width="35" style="margin-right:18px;" onerror="this.src='https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/Aegis.png'">
-                    <span style="font-weight:600; color:#e0e0e0; font-size:1.1em;">{team}</span>
+                    <span class="rank-badge">#{i+1}</span>
+                    <img src="{get_logo(team)}" width="28" style="margin-right:15px;" onerror="this.src='https://raw.githubusercontent.com/RubenFr87/DotaPredictor/main/Aegis.png'">
+                    <span style="font-weight:600; color:#24292f;">{team}</span>
                 </div>
             """, unsafe_allow_html=True)
 
 # --- TAB 2: LEADERBOARD ---
 with tab2:
-    st.markdown("<h2 style='color:#00F5FF'>🏆 GLOBAL LEADERBOARD</h2>", unsafe_allow_html=True)
+    st.header("🏆 Live Standings")
     if subs_df.empty or "Oracle Name" not in subs_df.columns:
-        st.info("The Oracle Vault is sealed. Be the first to submit.")
+        st.info("No prophecies locked in yet.")
     else:
-        # Business logic for scoring
         latest_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        leaderboard_rows = []
+        lb_rows = []
         for _, row in latest_subs.iterrows():
-            pred_list = row["Rankings"].split(", ")
+            preds = row["Rankings"].split(", ")
             penalty = 0
             perfects = 0
             if not res_df.empty and "Team" in res_df.columns:
-                for rank, team in enumerate(pred_list, 1):
-                    off_row = res_df[res_df["Team"] == team]
-                    if not off_row.empty:
-                        off_rank = int(off_row.iloc[0]["Rank"])
-                        if off_rank > 0:
-                            dist = abs(rank - off_rank)
+                for rank, team in enumerate(preds, 1):
+                    res_row = res_df[res_df["Team"] == team]
+                    if not res_row.empty:
+                        actual = int(res_row.iloc[0]["Rank"])
+                        if actual > 0:
+                            dist = abs(rank - actual)
                             mult = 4 if rank == 1 else (3 if rank == 2 else (2 if rank in [3, 4] else 1))
                             penalty += (dist * mult)
                             if dist == 0: perfects += 1
-            leaderboard_rows.append({"Oracle": row["Oracle Name"], "Penalty": penalty, "Bullseyes": perfects})
+            lb_rows.append({"Oracle": row["Oracle Name"], "Penalty Score": penalty, "Perfect Picks": perfects})
         
-        lb_final = pd.DataFrame(leaderboard_rows).sort_values(["Penalty", "Bullseyes"], ascending=[True, False])
-        st.dataframe(lb_final, use_container_width=True)
+        st.dataframe(pd.DataFrame(lb_rows).sort_values(["Penalty Score", "Perfect Picks"], ascending=[True, False]), use_container_width=True)
 
 # --- TAB 3: MATRIX ---
 with tab3:
-    st.markdown("<h2 style='color:#00F5FF'>📊 COMPARISON MATRIX</h2>", unsafe_allow_html=True)
+    st.header("📊 Comparison Matrix")
     if not subs_df.empty:
-        matrix_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        matrix_data = []
-        for _, row in matrix_subs.iterrows():
-            ranks = row["Rankings"].split(", ")
-            entry = {"Oracle": row["Oracle Name"]}
-            for i, t in enumerate(ranks): entry[f"#{i+1}"] = t
-            matrix_data.append(entry)
-        st.dataframe(pd.DataFrame(matrix_data), use_container_width=True)
+        m_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
+        m_data = []
+        for _, row in m_subs.iterrows():
+            r = row["Rankings"].split(", ")
+            e = {"Oracle": row["Oracle Name"]}
+            for i, t in enumerate(r): e[f"#{i+1}"] = t
+            m_data.append(e)
+        st.dataframe(pd.DataFrame(m_data), use_container_width=True)
 
 # --- TAB 4: PROTOCOL ---
 with tab4:
-    st.markdown("<h2 style='color:#00F5FF'>📜 ORACLE CALCULATION RULES</h2>", unsafe_allow_html=True)
+    st.header("📜 Scoring Protocol")
     c1, c2 = st.columns(2)
     with c1:
-        st.info("**SCORING:** Lower points = Higher rank.")
         st.markdown("""
-        **Penalty Calculation:**
-        - Distance from Actual x Multiplier.
-        - **1st Place Pick:** 4x Penalty
-        - **2nd Place Pick:** 3x Penalty
-        - **3rd/4th Place Pick:** 2x Penalty
-        - **All Others:** 1x Penalty
+        **Golf Scoring:** Lowest total points wins.
+        - **Penalty = Distance x Multiplier**
+        - **Rank #1:** 4x Penalty
+        - **Rank #2:** 3x Penalty
+        - **Rank #3-4:** 2x Penalty
+        - **All others:** 1x Penalty
         """)
     with c2:
-        st.info("**TIES:** Resolved by 'Bullseyes'.")
         st.markdown("""
-        **Tie-Breaking Priority:**
-        1. Total exact rank matches (Bullseyes).
-        2. Lowest penalty in the Top 4 bracket.
+        **Tie-Breakers:**
+        1. Total number of 'Perfect Picks' (exact rank match).
+        2. Lowest total penalty in the Top 4 prediction bracket.
         """)
