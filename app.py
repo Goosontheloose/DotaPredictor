@@ -5,12 +5,13 @@ import streamlit.components.v1 as components
 import json
 from datetime import datetime
 
-# --- CONFIGURATION (UNCHANGED) ---
+# --- CONFIGURATION ---
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 
+# Full 16-team roster
 TEAMS = [
     "Falcons", "LGD", "Iron Wing", "Nigma",
     "BoomBoys", "OG", "Team Vision", "Resilience",
@@ -38,18 +39,28 @@ results_df, subs_df = load_data()
 def get_logo_url(name):
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
-# --- THE UNIFIED INTERFACE (LOCKED - DO NOT CHANGE) ---
+# --- THE UNIFIED INTERFACE (WITH STATE BRIDGE) ---
 def unified_prediction_ui(team_list):
-    items_json = json.dumps([{"name": t, "logo": get_logo_url(t)} for t in team_list])
+    # Check if we have a saved order in the URL, otherwise use default
+    query_order = st.query_params.get("order", None)
+    if query_order:
+        current_list = query_order.split(",")
+    else:
+        current_list = team_list
+
+    items_json = json.dumps([{"name": t, "logo": get_logo_url(t)} for t in current_list])
+    
     html_code = f"""
     <div id="drag-container" style="font-family: sans-serif; background: #ffffff; padding: 10px;">
         <ul id="sortable-list" style="list-style: none; padding: 0; margin: 0;"></ul>
     </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script>
         const teams = {items_json};
         const listElement = document.getElementById('sortable-list');
         const aegisFallback = "{GITHUB_BASE}Aegis.png";
+
         function render() {{
             listElement.innerHTML = '';
             teams.forEach((team, index) => {{
@@ -64,24 +75,29 @@ def unified_prediction_ui(team_list):
                 listElement.appendChild(li);
             }});
         }}
+
         render();
+
         const sortable = new Sortable(listElement, {{
             animation: 150,
             onEnd: function() {{
                 const newOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
-                window.parent.postMessage({{type: 'streamlit:setComponentValue', value: newOrder}}, '*');
+                
+                // Update the numbers visually
                 Array.from(listElement.children).forEach((li, idx) => {{
                     li.querySelector('span').innerText = '#' + (idx + 1);
                 }});
+
+                // BRIDGE: Update the parent URL so Python can see the new order
+                const url = new URL(window.parent.location);
+                url.searchParams.set('order', newOrder.join(','));
+                window.parent.history.replaceState({{}}, '', url);
             }}
         }});
-        setTimeout(() => {{
-            const initialOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: initialOrder}}, '*');
-        }}, 300);
     </script>
     """
-    return components.html(html_code, height=1200)
+    # High height to ensure all 16 teams are visible without a second scrollbar
+    return components.html(html_code, height=1250)
 
 # --- HEADER ---
 st.markdown(f"""
@@ -94,20 +110,33 @@ st.markdown(f"""
 tabs = st.tabs(["🔮 LOCK-IN", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
 with tabs[0]:
-    oracle_name = st.text_input("Oracle Name", placeholder="Enter your name...")
-    current_order = unified_prediction_ui(TEAMS)
+    oracle_name = st.text_input("Oracle Name", placeholder="Enter your name to secure your prophecy...")
+    
+    # Render UI (Captures order via URL bridge)
+    unified_prediction_ui(TEAMS)
+    
     if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
+        # Get the actual current order from the URL bridge
+        final_order_str = st.query_params.get("order", ",".join(TEAMS))
+        
         if not oracle_name:
             st.error("Please enter your name.")
         else:
             try:
-                final_rank_list = current_order if (current_order is not None and isinstance(current_order, list)) else TEAMS
-                new_entry = pd.DataFrame([{"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "Oracle Name": oracle_name, "Rankings": ",".join(final_rank_list)}])
+                new_entry = pd.DataFrame([{
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Oracle Name": oracle_name,
+                    "Rankings": final_order_str
+                }])
+                
                 updated_df = pd.concat([subs_df, new_entry], ignore_index=True)
                 conn.update(worksheet="Submissions", data=updated_df)
+                
                 st.success(f"Prophecy locked for {oracle_name}!")
                 st.balloons()
                 st.cache_data.clear()
+                # Clear the URL order after success
+                st.query_params.clear()
             except Exception as e:
                 st.error(f"Write failed: {e}")
 
@@ -122,35 +151,26 @@ with tabs[1]:
         for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
             f_score, p_score, perfect = 0, 0, 0
-            
             for i, team in enumerate(preds):
-                pred_rank = i + 1
-                actual_rank = int(actual_ranks.get(team, 0))
+                p_rank = i + 1
+                a_rank = int(actual_ranks.get(team, 0))
                 status = statuses.get(team, 'Active')
-                
-                if actual_rank > 0:
-                    m = 4 if pred_rank==1 else 3 if pred_rank==2 else 2 if pred_rank in [3,4] else 1
-                    penalty = abs(pred_rank - actual_rank) * m
-                    
-                    # Always count toward projected
+                if a_rank > 0:
+                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    penalty = abs(p_rank - a_rank) * m
                     p_score += penalty
-                    # Only count toward finalized if team is "Eliminated" or "Winner"
-                    if status.lower() != 'active':
-                        f_score += penalty
-                    
-                    if pred_rank == actual_rank:
-                        perfect += 1
+                    if status.lower() != 'active': f_score += penalty
+                    if p_rank == a_rank: perfect += 1
             
             lb.append({
                 "Oracle": row['Oracle Name'], 
-                "Finalized Score": int(f_score), 
+                "Finalised Score": int(f_score), 
                 "Projected Score": int(p_score), 
                 "Perfect Picks": perfect
             })
-        
         st.table(pd.DataFrame(lb).sort_values(["Projected Score", "Perfect Picks"], ascending=[True, False]))
     else:
-        st.info("Leaderboard will update as soon as the Arbiter enters results.")
+        st.info("Awaiting tournament results.")
 
 with tabs[2]:
     st.subheader("Prediction Matrix")
@@ -171,7 +191,7 @@ with tabs[3]:
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
     
     ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is worth more. Penalties are multiplied based on where **you** predicted the team would finish:
+    Penalties are multiplied based on where **you** predicted the team would finish:
     * **1st Place Pick:** 4x Penalty  
     * **2nd Place Pick:** 3x Penalty  
     * **3rd - 4th Place Pick:** 2x Penalty  
@@ -181,12 +201,12 @@ with tabs[3]:
     `|Predicted Rank - Actual Rank| × Multiplier = Penalty`
     
     **Example:**  
-    If you pick **Team Liquid** for **1st Place** (4x multiplier), but they finish **3rd**:  
+    If you pick **Liquid** for **1st Place** (4x multiplier), but they finish **3rd**:  
     `|1 - 3| = 2`  
     `2 × 4 = 8 Penalty Points`
     
     ### 📊 Score Types
-    * **Finalized Score:** Penalties from teams whose tournament run is finished.
+    * **Finalised Score:** Points from teams whose tournament run is officially finished.
     * **Projected Score:** Your current score based on live tournament standings.
     
     ### 🏁 Tie-Breakers
