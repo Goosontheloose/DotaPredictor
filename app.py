@@ -65,7 +65,8 @@ def load_data():
 results_df, subs_df = load_data()
 
 # --- LOGO HELPER ---
-def get_logo_"
+def get_logo_url(name):
+    return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
 # --- HEADER (Fixed aegis.png) ---
 st.markdown(f"""
@@ -100,4 +101,77 @@ with tabs[0]:
                 </div>
             """, unsafe_allow_html=True)
     else:
-        st.info("Awaiting tournament
+        st.info("Awaiting tournament data.")
+
+with tabs[1]:
+    st.subheader("Leaderboard Standings")
+    if not subs_df.empty and not results_df.empty:
+        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
+        actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
+        raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
+        
+        lb = []
+        for _, row in clean_subs.iterrows():
+            preds = str(row['Rankings']).split(',')
+            f_score, p_score = 0, 0
+            f_perfect, p_perfect = 0, 0
+            for i, team in enumerate(preds):
+                p_rank = i + 1
+                t_name = team.strip()
+                a_rank = int(float(actual_ranks.get(t_name, 0)))
+                status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
+                if a_rank > 0:
+                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    penalty = abs(p_rank - a_rank) * m
+                    bonus = -1 if p_rank == a_rank else 0
+                    team_total = penalty + bonus
+                    p_score += team_total
+                    if p_rank == a_rank: p_perfect += 1
+                    if status_val == 'completed':
+                        f_score += team_total
+                        if p_rank == a_rank: f_perfect += 1
+            
+            lb.append({
+                "Oracle": row['Oracle Name'], 
+                "Finalised Score": int(f_score),
+                "Perfect (Finalised)": f_perfect,
+                "Projected Score": int(p_score),
+                "Perfect (Projected)": p_perfect
+            })
+        
+        df_lb = pd.DataFrame(lb).sort_values(["Finalised Score", "Perfect (Finalised)", "Projected Score"])
+        st.dataframe(df_lb, hide_index=True, use_container_width=True)
+
+with tabs[2]:
+    st.subheader("Predictions Matrix")
+    if not subs_df.empty:
+        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
+        m_rows = []
+        for _, row in clean_subs.iterrows():
+            p = str(row['Rankings']).split(',')
+            d = {"Oracle": row['Oracle Name']}
+            for i, team in enumerate(p): d[f"#{i+1}"] = team
+            m_rows.append(d)
+        st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
+
+with tabs[3]:
+    st.subheader("Scoring Protocol")
+    st.markdown("""
+    ### ⛳ Golf Scoring Logic
+    The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
+    
+    ### 🎯 Prophetic Deduction
+    A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
+    *   **Distance Penalty = 0**
+    *   **Bonus Deduction = -1 point**
+    
+    ### 🔢 Penalty Multipliers
+    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
+    * **1st Place Pick:** 4x Multiplier  
+    * **2nd Place Pick:** 3x Multiplier  
+    * **3rd - 4th Place Pick:** 2x Multiplier  
+    * **5th - 16th Place Pick:** 1x Multiplier
+    
+    ### 🧪 The Calculation
+    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
+    """)
