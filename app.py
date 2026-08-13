@@ -17,64 +17,74 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- THE ARBITER (Upgraded to bypass 403) ---
 def run_diagnostic_arbiter():
     status_log = []
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(LIQUIPEDIA_URL, headers=headers, timeout=10)
+        # ADVANCED HEADERS: To mimic a real Chrome browser and avoid 403
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.google.com/',
+        }
+        
+        response = requests.get(LIQUIPEDIA_URL, headers=headers, timeout=15)
         status_log.append(f"Liquipedia Status: {response.status_code}")
         
+        if response.status_code == 403:
+            status_log.append("🚨 Still Forbidden. Liquipedia is blocking the Streamlit IP range.")
+            return status_log
+
         soup = BeautifulSoup(response.content, 'html.parser')
         live_ranks = {}
         
-        # Liquipedia group tables are usually 'grouptable' or 'wikitable'
-        tables = soup.find_all('table', class_='grouptable')
-        if not tables:
-            tables = soup.find_all('table', class_='wikitable')
-            
+        # Liquipedia uses 'wikitable' for group standings
+        tables = soup.find_all('table', class_='wikitable')
         status_log.append(f"Tables found: {len(tables)}")
         
         for table in tables:
-            for row in table.find_all('tr'):
+            rows = table.find_all('tr')
+            for row in rows:
                 cells = row.find_all(['td', 'th'])
                 if len(cells) >= 2:
-                    # In many Liquipedia tables, Rank is cell 0, Team is cell 1
-                    rank_text = cells[0].get_text(strip=True).replace('#', '')
-                    # Using span check for team name as it's more precise
-                    t_span = row.find('span', class_='team-template-text')
-                    if t_span:
-                        team_text = t_span.get_text(strip=True)
-                        if rank_text.isdigit():
-                            live_ranks[team_text.lower()] = rank_text
+                    # Clean the rank (e.g. "1." -> "1")
+                    rank_raw = cells[0].get_text(strip=True).replace('.', '').replace('#', '')
+                    
+                    # Find the team name inside the standard Liquipedia span
+                    team_span = row.find('span', class_='team-template-text')
+                    if team_span:
+                        team_name = team_span.get_text(strip=True).lower()
+                        if rank_raw.isdigit():
+                            live_ranks[team_name] = rank_raw
         
         status_log.append(f"Teams successfully scraped: {len(live_ranks)}")
         
-        # Update Results Sheet
+        # Cross-reference with GSheet
         res_df = conn.read(worksheet="Results", ttl=0)
         if not res_df.empty:
             updated_count = 0
             for idx, row in res_df.iterrows():
                 sheet_name = str(row['Team']).strip().lower()
-                
-                # Check for a match in the scraped data
-                if sheet_name in live_ranks:
-                    res_df.at[idx, 'Rank'] = live_ranks[sheet_name]
-                    updated_count += 1
+                # Check for exact match or partial match (e.g. "Falcons" in "Team Falcons")
+                for lp_name, lp_rank in live_ranks.items():
+                    if sheet_name in lp_name or lp_name in sheet_name:
+                        res_df.at[idx, 'Rank'] = lp_rank
+                        updated_count += 1
+                        break
             
             if updated_count > 0:
                 conn.update(worksheet="Results", data=res_df)
-                status_log.append(f"SUCCESS: Wrote {updated_count} updates to GSheets.")
+                status_log.append(f"SUCCESS: Synced {updated_count} teams to GSheets.")
             else:
-                status_log.append("No matches found between Sheet names and Liquipedia names.")
-                if live_ranks:
-                    status_log.append(f"Scraped names included: {list(live_ranks.keys())[:3]}...")
+                status_log.append("No name matches found between Sheet and Website.")
                 
     except Exception as e:
         status_log.append(f"CRITICAL ERROR: {str(e)}")
     
     return status_log
 
-# Execution and Show Diagnostics
+# Diagnostics UI
 with st.expander("🛠 SYSTEM DIAGNOSTICS"):
     logs = run_diagnostic_arbiter()
     for log in logs:
@@ -95,7 +105,7 @@ results_df, subs_df = load_data()
 def get_logo_url(name):
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
-# --- HEADER (Lowercase aegis.png) ---
+# --- HEADER ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}aegis.png" width="80">
@@ -146,7 +156,7 @@ with tabs[1]:
                 a_rank = int(float(actual_ranks.get(t_name, 0)))
                 status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
                 if a_rank > 0:
-                    m = [0, 4, 3, 2, 2][p_rank] if p_rank <= 4 else 1
+                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
                     bonus = -1 if p_rank == a_rank else 0
                     team_total = penalty + bonus
@@ -175,7 +185,8 @@ with tabs[2]:
         for _, row in clean_subs.iterrows():
             p = str(row['Rankings']).split(',')
             d = {"Oracle": row['Oracle Name']}
-            for i, team in enumerate(p): d[f"#{i+1}"] = team
+            for i, team in enumerate(p):
+                d[f"#{i+1}"] = team.strip()
             m_rows.append(d)
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
