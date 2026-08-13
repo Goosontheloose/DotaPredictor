@@ -116,7 +116,7 @@ with tabs[0]:
     else:
         st.info("Awaiting tournament data.")
 
-with tabs[1](https://liquipedia.net/commons/Module:GroupTableLeague/next/downstream/doc "inline-citation"):
+with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
@@ -135,7 +135,7 @@ with tabs[1](https://liquipedia.net/commons/Module:GroupTableLeague/next/downstr
                 status_val = str(raw_statuses.get(team.strip(), 'Active')).strip().lower()
                 
                 if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3](https://liquipedia.net/sideswipe/Template:GroupTableLeague "inline-citation")[4](https://liquipedia.net/counterstrike/Module:SwissTableLeague "inline-citation") else 1
+                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
                     
                     # PROPHETIC DEDUCTION
@@ -163,7 +163,7 @@ with tabs[1](https://liquipedia.net/commons/Module:GroupTableLeague/next/downstr
         )
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
 
-with tabs[2](https://liquipedia.net/commons/Module:GroupTableLeague "inline-citation"):
+with tabs[2]:
     st.subheader("Predictions")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
@@ -175,7 +175,7 @@ with tabs[2](https://liquipedia.net/commons/Module:GroupTableLeague "inline-cita
             m_rows.append(d)
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
-with tabs[3](https://liquipedia.net/sideswipe/Template:GroupTableLeague "inline-citation"):
+with tabs[3]:
     st.subheader("The Rules (Scoring)")
     st.markdown("""
     ### ⛳ Golf Scoring Logic
