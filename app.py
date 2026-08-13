@@ -37,13 +37,12 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# UPDATED TAB LAYOUT (LOCK-IN REMOVED)
+# UPDATED TAB LAYOUT
 tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
-        # Sort results by the Rank column you manage in the sheet
         sorted_results = results_df.sort_values("Rank")
         
         for _, row in sorted_results.iterrows():
@@ -52,7 +51,6 @@ with tabs[0]:
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
             
-            # Formatting for Completed (Red) vs Active (White)
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
             card_text = "#991b1b" if t_status == "completed" else "#24292f"
@@ -67,12 +65,11 @@ with tabs[0]:
                 </div>
             """, unsafe_allow_html=True)
     else:
-        st.info("Awaiting manual ranking data from the Arbiter in the 'Results' sheet.")
+        st.info("Awaiting manual ranking data from the Arbiter.")
 
 with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
-        # Deduplicate submissions to show only the latest per person
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
@@ -80,31 +77,40 @@ with tabs[1]:
         lb = []
         for _, row in clean_subs.iterrows():
             preds = row['Rankings'].split(',')
-            f_score, p_score, perfect = 0, 0, 0
+            f_score, p_score = 0, 0
+            f_perfect, p_perfect = 0, 0
+            
             for i, team in enumerate(preds):
                 p_rank = i + 1
                 a_rank = int(actual_ranks.get(team, 0))
                 status_val = str(raw_statuses.get(team, 'Active')).strip().lower()
                 
                 if a_rank > 0:
-                    # Multipliers based on prediction rank
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
                     
                     p_score += penalty
+                    if p_rank == a_rank:
+                        p_perfect += 1
+                        
                     if status_val == 'completed':
                         f_score += penalty
-                    if p_rank == a_rank:
-                        perfect += 1
+                        if p_rank == a_rank:
+                            f_perfect += 1
             
             lb.append({
                 "Oracle": row['Oracle Name'], 
-                "Finalised Score": int(f_score), 
-                "Projected Score": int(p_score), 
-                "Perfect Picks": perfect
+                "Finalised Score": int(f_score),
+                "Perfect (Finalised)": f_perfect,
+                "Projected Score": int(p_score),
+                "Perfect (Projected)": p_perfect
             })
         
-        df_lb = pd.DataFrame(lb).sort_values(["Projected Score", "Perfect Picks"], ascending=[True, False])
+        # Rank by Finalised Score first
+        df_lb = pd.DataFrame(lb).sort_values(
+            ["Finalised Score", "Perfect (Finalised)", "Projected Score"], 
+            ascending=[True, False, True]
+        )
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
     else:
         st.info("Awaiting tournament results and user submissions.")
