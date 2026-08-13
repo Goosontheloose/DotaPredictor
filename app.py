@@ -14,7 +14,7 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=100)
 def load_data():
     try:
         res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
