@@ -27,21 +27,27 @@ def run_diagnostic_arbiter():
         soup = BeautifulSoup(response.content, 'html.parser')
         live_ranks = {}
         
-        # Target the 'wikitable' which is standard for Liquipedia standings
-        tables = soup.find_all('table', class_='wikitable')
+        # Liquipedia group tables are usually 'grouptable' or 'wikitable'
+        tables = soup.find_all('table', class_='grouptable')
+        if not tables:
+            tables = soup.find_all('table', class_='wikitable')
+            
         status_log.append(f"Tables found: {len(tables)}")
         
         for table in tables:
             for row in table.find_all('tr'):
-                cells = row.find_all('td')
+                cells = row.find_all(['td', 'th'])
                 if len(cells) >= 2:
-                    # Liquipedia usually has Rank in cell 0 and Team Name in cell 1
+                    # In many Liquipedia tables, Rank is cell 0, Team is cell 1
                     rank_text = cells[0].get_text(strip=True).replace('#', '')
-                    team_text = cells[1](https://liquipedia.net/dota2/The_International/2026/Group_Stage "inline-citation").get_text(strip=True)
-                    if rank_text.isdigit():
-                        live_ranks[team_text.lower()] = rank_text
+                    # Using span check for team name as it's more precise
+                    t_span = row.find('span', class_='team-template-text')
+                    if t_span:
+                        team_text = t_span.get_text(strip=True)
+                        if rank_text.isdigit():
+                            live_ranks[team_text.lower()] = rank_text
         
-        status_log.append(f"Teams scraped: {len(live_ranks)}")
+        status_log.append(f"Teams successfully scraped: {len(live_ranks)}")
         
         # Update Results Sheet
         res_df = conn.read(worksheet="Results", ttl=0)
@@ -49,27 +55,27 @@ def run_diagnostic_arbiter():
             updated_count = 0
             for idx, row in res_df.iterrows():
                 sheet_name = str(row['Team']).strip().lower()
-                # Check for exact or partial match (e.g., "Falcons" in "Team Falcons")
-                for lp_name, lp_rank in live_ranks.items():
-                    if sheet_name in lp_name or lp_name in sheet_name:
-                        res_df.at[idx, 'Rank'] = lp_rank
-                        updated_count += 1
-                        break
+                
+                # Check for a match in the scraped data
+                if sheet_name in live_ranks:
+                    res_df.at[idx, 'Rank'] = live_ranks[sheet_name]
+                    updated_count += 1
             
             if updated_count > 0:
-                # Force index=False to prevent Google Sheets from adding a column
                 conn.update(worksheet="Results", data=res_df)
-                status_log.append(f"Successfully wrote {updated_count} updates to GSheets.")
+                status_log.append(f"SUCCESS: Wrote {updated_count} updates to GSheets.")
             else:
-                status_log.append("No matches found between Sheet and Website names.")
+                status_log.append("No matches found between Sheet names and Liquipedia names.")
+                if live_ranks:
+                    status_log.append(f"Scraped names included: {list(live_ranks.keys())[:3]}...")
                 
     except Exception as e:
-        status_log.append(f"ERROR: {str(e)}")
+        status_log.append(f"CRITICAL ERROR: {str(e)}")
     
     return status_log
 
-# Execute and Show Diagnostics
-with st.expander("🛠 SYSTEM DIAGNOSTICS (Hide this once working)"):
+# Execution and Show Diagnostics
+with st.expander("🛠 SYSTEM DIAGNOSTICS"):
     logs = run_diagnostic_arbiter()
     for log in logs:
         st.write(f"- {log}")
@@ -89,7 +95,7 @@ results_df, subs_df = load_data()
 def get_logo_url(name):
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
-# --- HEADER ---
+# --- HEADER (Lowercase aegis.png) ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}aegis.png" width="80">
@@ -122,7 +128,7 @@ with tabs[0]:
                 </div>
             """, unsafe_allow_html=True)
 
-with tabs[1](https://liquipedia.net/dota2/The_International/2026/Group_Stage "inline-citation"):
+with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
