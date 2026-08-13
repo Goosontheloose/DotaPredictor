@@ -1,98 +1,22 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
 
 # --- CONFIGURATION ---
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
-LIQUIPEDIA_URL = "https://liquipedia.net/dota2/The_International/2026/Group_Stage"
 
 st.set_page_config(page_title="TI 2026", layout="centered")
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- THE ARBITER (Upgraded to bypass 403) ---
-def run_diagnostic_arbiter():
-    status_log = []
-    try:
-        # ADVANCED HEADERS: To mimic a real Chrome browser and avoid 403
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.google.com/',
-        }
-        
-        response = requests.get(LIQUIPEDIA_URL, headers=headers, timeout=15)
-        status_log.append(f"Liquipedia Status: {response.status_code}")
-        
-        if response.status_code == 403:
-            status_log.append("🚨 Still Forbidden. Liquipedia is blocking the Streamlit IP range.")
-            return status_log
-
-        soup = BeautifulSoup(response.content, 'html.parser')
-        live_ranks = {}
-        
-        # Liquipedia uses 'wikitable' for group standings
-        tables = soup.find_all('table', class_='wikitable')
-        status_log.append(f"Tables found: {len(tables)}")
-        
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
-                    # Clean the rank (e.g. "1." -> "1")
-                    rank_raw = cells[0].get_text(strip=True).replace('.', '').replace('#', '')
-                    
-                    # Find the team name inside the standard Liquipedia span
-                    team_span = row.find('span', class_='team-template-text')
-                    if team_span:
-                        team_name = team_span.get_text(strip=True).lower()
-                        if rank_raw.isdigit():
-                            live_ranks[team_name] = rank_raw
-        
-        status_log.append(f"Teams successfully scraped: {len(live_ranks)}")
-        
-        # Cross-reference with GSheet
-        res_df = conn.read(worksheet="Results", ttl=0)
-        if not res_df.empty:
-            updated_count = 0
-            for idx, row in res_df.iterrows():
-                sheet_name = str(row['Team']).strip().lower()
-                # Check for exact match or partial match (e.g. "Falcons" in "Team Falcons")
-                for lp_name, lp_rank in live_ranks.items():
-                    if sheet_name in lp_name or lp_name in sheet_name:
-                        res_df.at[idx, 'Rank'] = lp_rank
-                        updated_count += 1
-                        break
-            
-            if updated_count > 0:
-                conn.update(worksheet="Results", data=res_df)
-                status_log.append(f"SUCCESS: Synced {updated_count} teams to GSheets.")
-            else:
-                status_log.append("No name matches found between Sheet and Website.")
-                
-    except Exception as e:
-        status_log.append(f"CRITICAL ERROR: {str(e)}")
-    
-    return status_log
-
-# Diagnostics UI
-with st.expander("🛠 SYSTEM DIAGNOSTICS"):
-    logs = run_diagnostic_arbiter()
-    for log in logs:
-        st.write(f"- {log}")
-
 @st.cache_data(ttl=5)
 def load_data():
     try:
+        # Pulling live data from your manual entries in Google Sheets
         res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
         sub = conn.read(worksheet="Submissions", ttl=0).dropna(how='all')
         return res, sub
@@ -103,6 +27,7 @@ results_df, subs_df = load_data()
 
 # --- LOGO HELPER ---
 def get_logo_url(name):
+    # Standardizing name for URL compatibility
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
 # --- HEADER ---
@@ -117,30 +42,44 @@ st.markdown(f"""
 tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
 
 with tabs[0]:
-    st.subheader("Official Tournament Standings")
+    st.subheader("Tournament Standings")
+    st.info("Rankings are updated manually by the Grand Arbiter.")
     if not results_df.empty:
+        # Convert Rank to numeric to ensure correct sorting
         results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
-        sorted_results = results_df.sort_values("Rank")
+        # Sort so Rank 1 is at the top; 0 (unranked) goes to bottom
+        sorted_results = results_df.sort_values("Rank", ascending=True)
+        
         for _, row in sorted_results.iterrows():
             t_name = str(row['Team'])
             t_rank = int(row['Rank'])
+            
+            # Skip teams that haven't been assigned a rank yet if you prefer
+            if t_rank == 0: continue 
+
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
+            
+            # Visual feedback for eliminated/completed teams
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
+            
             st.markdown(f"""
                 <div style="display: flex; align-items: center; background: {card_bg}; 
                             margin-bottom: 8px; padding: 12px; border-radius: 8px; 
-                            border: 1px solid {card_border};">
-                    <span style="font-weight: bold; color: #57606a; width: 35px;">#{t_rank}</span>
-                    <img src="{t_logo}" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
-                    <span style="font-weight: 600;">{t_name}</span>
+                            border: 1px solid {card_border}; shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <span style="font-weight: bold; color: #57606a; width: 35px; font-size: 1.1em;">#{t_rank}</span>
+                    <img src="{t_logo}" style="width: 32px; height: 32px; margin-right: 15px; object-fit: contain;">
+                    <span style="font-weight: 600; font-size: 1.1em; color: #1a1a1a;">{t_name}</span>
                 </div>
             """, unsafe_allow_html=True)
+    else:
+        st.warning("Waiting for the Grand Arbiter to enter results in the Google Sheet.")
 
 with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
+        # Deduplicate to show only the latest prophecy per user
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
@@ -150,18 +89,25 @@ with tabs[1]:
             preds = str(row['Rankings']).split(',')
             f_score, p_score = 0, 0
             f_perfect, p_perfect = 0, 0
+            
             for i, team in enumerate(preds):
                 p_rank = i + 1
                 t_name = team.strip()
                 a_rank = int(float(actual_ranks.get(t_name, 0)))
                 status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
+                
                 if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    # Apply Multipliers: 1st=4x, 2nd=3x, 3-4th=2x, rest=1x
+                    m = 4 if p_rank == 1 else 3 if p_rank == 2 else 2 if p_rank in [3, 4] else 1
                     penalty = abs(p_rank - a_rank) * m
+                    # Prophetic Deduction: -1 for exact match
                     bonus = -1 if p_rank == a_rank else 0
                     team_total = penalty + bonus
+                    
                     p_score += team_total
                     if p_rank == a_rank: p_perfect += 1
+                    
+                    # Finalised Score only counts teams marked as 'completed'
                     if status_val == 'completed':
                         f_score += team_total
                         if p_rank == a_rank: f_perfect += 1
@@ -174,7 +120,8 @@ with tabs[1]:
                 "Perfect (Projected)": p_perfect
             })
         
-        df_lb = pd.DataFrame(lb).sort_values(["Finalised Score", "Perfect (Finalised)", "Projected Score"])
+        # Sort by Finalised Score (Asc), then Perfect Picks (Desc)
+        df_lb = pd.DataFrame(lb).sort_values(["Finalised Score", "Perfect (Finalised)", "Projected Score"], ascending=[True, False, True])
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
 
 with tabs[2]:
@@ -193,7 +140,17 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("Scoring Protocol")
     st.markdown("""
-    - **Golf Scoring:** Lowest score wins.
-    - **Multipliers:** 1st(4x), 2nd(3x), 3rd/4th(2x), others(1x).
-    - **Prophetic Deduction:** -1 bonus point for each perfect rank prediction.
+    ### How to read the scores:
+    *   **Finalised Score:** Penalty points calculated only for teams whose tournament run is **Completed**.
+    *   **Projected Score:** Penalty points calculated against the **Current Standings** (includes active teams).
+    *   **The Goal:** Lowest score wins.
+
+    ### The Math:
+    1.  **Distance Penalty:** `ABS(Predicted Rank - Actual Rank)`
+    2.  **Weight Multiplier:**
+        *   Predicted 1st: **4x**
+        *   Predicted 2nd: **3x**
+        *   Predicted 3rd-4th: **2x**
+        *   All others: **1x**
+    3.  **Prophetic Deduction:** **-1 point** is deducted from your total score for every team you place in their exact final rank.
     """)
