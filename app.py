@@ -9,7 +9,7 @@ REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 
-st.set_page_config(page_title="AEGIS ORACLE 2026", layout="centered")
+st.set_page_config(page_title="TI 2026", layout="centered")
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -33,12 +33,12 @@ def get_logo_url(name):
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">AEGIS ORACLE: SHANGHAI 2026</h1>
+        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">TI 2026 PREDICTIONS</h1>
     </div>
 """, unsafe_allow_html=True)
 
 # UPDATED TAB LAYOUT
-tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
+tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PICKS", "📜 SCORING RULES"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
@@ -116,7 +116,7 @@ with tabs[1]:
         st.info("Awaiting tournament results and user submissions.")
 
 with tabs[2]:
-    st.subheader("Prediction Matrix")
+    st.subheader("Predictions")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
@@ -128,7 +128,7 @@ with tabs[2]:
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
 with tabs[3]:
-    st.subheader("The Oracle Protocol")
+    st.subheader("Scoring Logic")
     st.markdown("""
     ### ⛳ Golf Scoring Logic
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
