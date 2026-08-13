@@ -32,7 +32,7 @@ def get_logo_url(name):
 # --- HEADER ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
-        <img src="{GITHUB_BASE}Aegis.png" width="80">
+        <img src="{GITHUB_BASE}Falcons.png" width="80">
         <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">The International Predictions 2026</h1>
     </div>
 """, unsafe_allow_html=True)
