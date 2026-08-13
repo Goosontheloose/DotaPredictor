@@ -7,7 +7,7 @@ import json
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
-GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
+GITHUB_BASE = f"https://cdn.jsdelivr.net/gh/{GITHUB_USER}/{REPO_NAME}@{BRANCH}/"
 
 st.set_page_config(page_title="TI 2026", layout="centered")
 
