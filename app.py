@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURATION (LOCKED) ---
+# --- CONFIGURATION ---
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
@@ -13,7 +13,7 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def load_data():
     try:
         res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
@@ -26,7 +26,8 @@ results_df, subs_df = load_data()
 
 # --- LOGO HELPER ---
 def get_logo_url(name):
-    return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
+    # Uses exact name from sheet to match GitHub filenames
+    return f"{GITHUB_BASE}{name.strip().replace(' ', '%20')}.png"
 
 # --- HEADER ---
 st.markdown(f"""
@@ -36,20 +37,19 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# TAB LAYOUT
+# --- TABS ---
 tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
-        # Convert Rank to numeric to ensure 1, 2, 3 order
         results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
         sorted_results = results_df.sort_values("Rank")
         
         for _, row in sorted_results.iterrows():
-            t_name = str(row['Team'])
+            t_name = str(row['Team']).strip()
             t_rank = int(row['Rank'])
-            if t_rank == 0: continue # Skip teams with no rank yet
+            if t_rank == 0: continue 
             
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
@@ -74,8 +74,8 @@ with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
-        raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
+        actual_ranks = dict(zip(results_df['Team'].str.strip(), results_df['Rank']))
+        raw_statuses = dict(zip(results_df['Team'].str.strip(), results_df.get('Status', ['Active']*len(results_df))))
         
         lb = []
         for _, row in clean_subs.iterrows():
@@ -85,18 +85,16 @@ with tabs[1]:
             
             for i, team in enumerate(preds):
                 p_rank = i + 1
-                t_name = team.strip() # Removed leading/trailing spaces for matching
+                t_name = team.strip()
                 a_rank = int(float(actual_ranks.get(t_name, 0)))
                 status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
                 
                 if a_rank > 0:
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
-                    
-                    # PROPHETIC DEDUCTION
                     bonus = -1 if p_rank == a_rank else 0
-                    
                     team_total = penalty + bonus
+                    
                     p_score += team_total
                     if p_rank == a_rank: p_perfect += 1
                         
@@ -117,8 +115,6 @@ with tabs[1]:
             ascending=[True, False, True]
         )
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
-    else:
-        st.info("Awaiting data.")
 
 with tabs[2]:
     st.subheader("Predictions Matrix")
