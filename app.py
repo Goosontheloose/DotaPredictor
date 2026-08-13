@@ -33,7 +33,7 @@ def get_logo_url(name):
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">The International Predictions 2026</h1>
+        <h1 style="margin-top: 10px; color: #74b86c; letter-spacing: -1px;">The International Predictions 2026</h1>
     </div>
 """, unsafe_allow_html=True)
 
