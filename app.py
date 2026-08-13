@@ -9,7 +9,7 @@ REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 
-st.set_page_config(page_title="TI 2026", layout="centered")
+st.set_page_config(page_title="AEGIS ORACLE 2026", layout="centered")
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -33,28 +33,25 @@ def get_logo_url(name):
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">TI 2026 PREDICTIONS</h1>
+        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">AEGIS ORACLE: SHANGHAI 2026</h1>
     </div>
 """, unsafe_allow_html=True)
 
-# UPDATED TAB LAYOUT
-tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PICKS", "📜 SCORING RULES"])
+# TAB LAYOUT
+tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
         sorted_results = results_df.sort_values("Rank")
-        
         for _, row in sorted_results.iterrows():
             t_name = str(row['Team'])
             t_rank = int(row['Rank'])
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
-            
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
             card_text = "#991b1b" if t_status == "completed" else "#24292f"
-            
             st.markdown(f"""
                 <div style="display: flex; align-items: center; background: {card_bg}; 
                             margin-bottom: 8px; padding: 12px; border-radius: 8px; 
@@ -89,14 +86,16 @@ with tabs[1]:
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
                     penalty = abs(p_rank - a_rank) * m
                     
-                    p_score += penalty
-                    if p_rank == a_rank:
-                        p_perfect += 1
+                    # PROPHETIC DEDUCTION
+                    bonus = -1 if p_rank == a_rank else 0
+                    
+                    team_total = penalty + bonus
+                    p_score += team_total
+                    if p_rank == a_rank: p_perfect += 1
                         
                     if status_val == 'completed':
-                        f_score += penalty
-                        if p_rank == a_rank:
-                            f_perfect += 1
+                        f_score += team_total
+                        if p_rank == a_rank: f_perfect += 1
             
             lb.append({
                 "Oracle": row['Oracle Name'], 
@@ -106,17 +105,16 @@ with tabs[1]:
                 "Perfect (Projected)": p_perfect
             })
         
-        # Rank by Finalised Score first
         df_lb = pd.DataFrame(lb).sort_values(
             ["Finalised Score", "Perfect (Finalised)", "Projected Score"], 
             ascending=[True, False, True]
         )
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
     else:
-        st.info("Awaiting tournament results and user submissions.")
+        st.info("Awaiting data.")
 
 with tabs[2]:
-    st.subheader("Predictions")
+    st.subheader("Prediction Matrix")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
@@ -128,22 +126,28 @@ with tabs[2]:
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
 with tabs[3]:
-    st.subheader("Scoring Logic")
+    st.subheader("The Oracle Protocol")
     st.markdown("""
     ### ⛳ Golf Scoring Logic
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
     
+    ### 🎯 Prophetic Deduction
+    A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
+    *   **Distance Penalty = 0**
+    *   **Bonus Deduction = -1 point**
+    
     ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is worth more. Penalties are multiplied based on where **you** predicted the team would finish:
-    * **1st Place Pick:** 4x Penalty  
-    * **2nd Place Pick:** 3x Penalty  
-    * **3rd - 4th Place Pick:** 2x Penalty  
-    * **5th - 16th Place Pick:** 1x Penalty
+    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
+    * **1st Place Pick:** 4x Multiplier  
+    * **2nd Place Pick:** 3x Multiplier  
+    * **3rd - 4th Place Pick:** 2x Multiplier  
+    * **5th - 16th Place Pick:** 1x Multiplier
     
-    ### 🧪 The Formula
-    `|Predicted Rank - Actual Rank| × Multiplier = Penalty`
+    ### 🧪 The Calculation
+    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
     
-    ### 📊 Score Types
-    * **Finalised Score:** Points from teams marked as **'Completed'** in the tournament results.
-    * **Projected Score:** Your current total score including all teams currently **'Active'**.
+    **Example:**  
+    You predict Team X at **#1** (4x Multiplier).  
+    * If they finish **#1**: `(0 × 4) + (-1) = -1 point`  
+    * If they finish **#3**: `(2 × 4) + (0) = 8 points`
     """)
