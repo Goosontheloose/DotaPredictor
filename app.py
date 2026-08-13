@@ -17,41 +17,62 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- THE SILENT ARBITER ---
-def run_silent_arbiter():
+def run_diagnostic_arbiter():
+    status_log = []
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(LIQUIPEDIA_URL, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        status_log.append(f"Liquipedia Status: {response.status_code}")
         
+        soup = BeautifulSoup(response.content, 'html.parser')
         live_ranks = {}
-        rows = soup.find_all('tr')
-        for row in rows:
-            t_cell = row.find('span', class_='team-template-text')
-            if t_cell:
-                team_name = t_cell.get_text().strip().lower()
-                cells = row.find_all(['td', 'th'])
-                if cells:
-                    rank_val = cells[0].get_text().strip().replace('#', '')
-                    if rank_val.isdigit():
-                        live_ranks[team_name] = rank_val
-
+        
+        # Target the 'wikitable' which is standard for Liquipedia standings
+        tables = soup.find_all('table', class_='wikitable')
+        status_log.append(f"Tables found: {len(tables)}")
+        
+        for table in tables:
+            for row in table.find_all('tr'):
+                cells = row.find_all('td')
+                if len(cells) >= 2:
+                    # Liquipedia usually has Rank in cell 0 and Team Name in cell 1
+                    rank_text = cells[0].get_text(strip=True).replace('#', '')
+                    team_text = cells[1](https://liquipedia.net/dota2/The_International/2026/Group_Stage "inline-citation").get_text(strip=True)
+                    if rank_text.isdigit():
+                        live_ranks[team_text.lower()] = rank_text
+        
+        status_log.append(f"Teams scraped: {len(live_ranks)}")
+        
+        # Update Results Sheet
         res_df = conn.read(worksheet="Results", ttl=0)
         if not res_df.empty:
-            updated = False
+            updated_count = 0
             for idx, row in res_df.iterrows():
                 sheet_name = str(row['Team']).strip().lower()
-                if sheet_name in live_ranks:
-                    res_df.at[idx, 'Rank'] = live_ranks[sheet_name]
-                    updated = True
+                # Check for exact or partial match (e.g., "Falcons" in "Team Falcons")
+                for lp_name, lp_rank in live_ranks.items():
+                    if sheet_name in lp_name or lp_name in sheet_name:
+                        res_df.at[idx, 'Rank'] = lp_rank
+                        updated_count += 1
+                        break
             
-            if updated:
+            if updated_count > 0:
+                # Force index=False to prevent Google Sheets from adding a column
                 conn.update(worksheet="Results", data=res_df)
-    except:
-        pass
+                status_log.append(f"Successfully wrote {updated_count} updates to GSheets.")
+            else:
+                status_log.append("No matches found between Sheet and Website names.")
+                
+    except Exception as e:
+        status_log.append(f"ERROR: {str(e)}")
+    
+    return status_log
 
-# Execute Arbiter
-run_silent_arbiter()
+# Execute and Show Diagnostics
+with st.expander("🛠 SYSTEM DIAGNOSTICS (Hide this once working)"):
+    logs = run_diagnostic_arbiter()
+    for log in logs:
+        st.write(f"- {log}")
 
 @st.cache_data(ttl=5)
 def load_data():
@@ -68,7 +89,7 @@ results_df, subs_df = load_data()
 def get_logo_url(name):
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
-# --- HEADER (Fixed aegis.png) ---
+# --- HEADER ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
         <img src="{GITHUB_BASE}aegis.png" width="80">
@@ -100,10 +121,8 @@ with tabs[0]:
                     <span style="font-weight: 600;">{t_name}</span>
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.info("Awaiting tournament data.")
 
-with tabs[1]:
+with tabs[1](https://liquipedia.net/dota2/The_International/2026/Group_Stage "inline-citation"):
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
@@ -121,7 +140,7 @@ with tabs[1]:
                 a_rank = int(float(actual_ranks.get(t_name, 0)))
                 status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
                 if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    m = [0, 4, 3, 2, 2][p_rank] if p_rank <= 4 else 1
                     penalty = abs(p_rank - a_rank) * m
                     bonus = -1 if p_rank == a_rank else 0
                     team_total = penalty + bonus
@@ -157,21 +176,7 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("Scoring Protocol")
     st.markdown("""
-    ### ⛳ Golf Scoring Logic
-    The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
-    
-    ### 🎯 Prophetic Deduction
-    A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
-    *   **Distance Penalty = 0**
-    *   **Bonus Deduction = -1 point**
-    
-    ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
-    * **1st Place Pick:** 4x Multiplier  
-    * **2nd Place Pick:** 3x Multiplier  
-    * **3rd - 4th Place Pick:** 2x Multiplier  
-    * **5th - 16th Place Pick:** 1x Multiplier
-    
-    ### 🧪 The Calculation
-    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
+    - **Golf Scoring:** Lowest score wins.
+    - **Multipliers:** 1st(4x), 2nd(3x), 3rd/4th(2x), others(1x).
+    - **Prophetic Deduction:** -1 bonus point for each perfect rank prediction.
     """)
