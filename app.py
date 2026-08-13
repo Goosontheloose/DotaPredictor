@@ -5,7 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 # --- APP CONFIG & CONSTANTS ---
 st.set_page_config(page_title="Aegis Oracle: Shanghai 2026", layout="wide")
 
-# CDN Base for Images
+# Updated for browser compatibility
 GITHUB_BASE = "https://cdn.jsdelivr.net/gh/Goosontheloose/DotaPredictor@main/"
 
 # Fixed 16 Teams List
@@ -23,29 +23,32 @@ def get_logo_url(team_name):
     return f"{GITHUB_BASE}{file_name}"
 
 # --- DATABASE CONNECTION ---
-@st.cache_data(ttl=60) # Reduced TTL to see sheet updates faster
+@st.cache_data(ttl=300)
 def load_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
     results = conn.read(worksheet="Results")
     submissions = conn.read(worksheet="Submissions")
-    
-    # CLEAN HEADERS: Remove hidden spaces and normalize to lowercase for logic
-    results.columns = [str(c).strip() for c in results.columns]
-    submissions.columns = [str(c).strip() for c in submissions.columns]
-    
     return results, submissions
 
 # --- SCORING LOGIC ---
 def calculate_score(predicted_rank, official_rank):
     if official_rank == 0:
         return 0, 0
+    
     distance = abs(predicted_rank - official_rank)
-    if predicted_rank == 1: multiplier = 4
-    elif predicted_rank == 2: multiplier = 3
-    elif predicted_rank in [3, 4]: multiplier = 2
-    else: multiplier = 1
+    
+    if predicted_rank == 1:
+        multiplier = 4
+    elif predicted_rank == 2:
+        multiplier = 3
+    elif predicted_rank in [3, 4]:
+        multiplier = 2
+    else:
+        multiplier = 1
+        
     penalty = distance * multiplier
     bonus = -1 if distance == 0 else 0
+    
     return penalty, bonus
 
 # --- STYLING ---
@@ -97,35 +100,22 @@ with col_h2:
 try:
     results_df, submissions_df = load_data()
     
-    # Map normalized column names for reliability
-    res_cols = {c.lower(): c for c in results_df.columns}
-    sub_cols = {c.lower(): c for c in submissions_df.columns}
-    
-    # Column mapping logic
-    COL_TEAM = res_cols.get('team', 'Team')
-    COL_RANK = res_cols.get('rank', 'Rank')
-    COL_ACTIVE = res_cols.get('active', 'Active')
-    
     tab1, tab2, tab3, tab4 = st.tabs(["Standings", "Leaderboard", "Predictions", "Rules"])
 
     with tab1:
         st.markdown("### Current Rankings")
-        # Ensure data is sorted by Rank
-        standings = results_df.sort_values(by=COL_RANK)
-        
+        standings = results_df.sort_values(by="Rank")
         for _, row in standings.iterrows():
-            val_active = str(row[COL_ACTIVE]).strip().lower()
-            is_active = (val_active == 'active')
-            
+            is_active = str(row['Active']).strip().lower() == 'active'
             status_class = "active" if is_active else "completed"
             status_text = "IN PLAY" if is_active else "FINAL"
             tag_class = "status-active" if is_active else "status-completed"
             
             st.markdown(f"""
                 <div class="team-card {status_class}">
-                    <div class="rank-badge">#{int(row[COL_RANK])}</div>
-                    <img src="{get_logo_url(row[COL_TEAM])}" class="team-logo">
-                    <div style="font-weight: 500;">{row[COL_TEAM]}</div>
+                    <div class="rank-badge">#{int(row['Rank'])}</div>
+                    <img src="{get_logo_url(row['Team'])}" class="team-logo">
+                    <div style="font-weight: 500;">{row['Team']}</div>
                     <div class="status-tag {tag_class}">{status_text}</div>
                 </div>
             """, unsafe_allow_html=True)
@@ -133,18 +123,14 @@ try:
     with tab2:
         st.markdown("### The Oracle Leaderboard")
         if not submissions_df.empty:
-            COL_TS = sub_cols.get('timestamp', 'Timestamp')
-            COL_NAME = sub_cols.get('oracle name', 'Oracle Name')
-            COL_PREDS = sub_cols.get('rankings', 'Rankings')
-            
-            submissions_df[COL_TS] = pd.to_datetime(submissions_df[COL_TS])
-            latest_subs = submissions_df.sort_values(COL_TS).groupby(COL_NAME).last().reset_index()
+            submissions_df['Timestamp'] = pd.to_datetime(submissions_df['Timestamp'])
+            latest_subs = submissions_df.sort_values('Timestamp').groupby('Oracle Name').last().reset_index()
             
             leaderboard_data = []
-            results_dict = dict(zip(results_df[COL_TEAM], results_df[COL_RANK]))
+            results_dict = dict(zip(results_df['Team'], results_df['Rank']))
 
             for _, sub in latest_subs.iterrows():
-                pred_list = sub[COL_PREDS].split(', ')
+                pred_list = sub['Rankings'].split(', ')
                 finalised_score = 0
                 projected_score = 0
                 perfect_picks = 0
@@ -152,18 +138,21 @@ try:
                 for i, team in enumerate(pred_list):
                     pred_rank = i + 1
                     actual_rank = results_dict.get(team, 0)
+                    
                     penalty, bonus = calculate_score(pred_rank, actual_rank)
                     
                     if actual_rank != 0:
-                        team_status = results_df[results_df[COL_TEAM] == team][COL_ACTIVE].iloc[0].strip().lower()
-                        if team_status != 'active':
+                        is_active = results_df[results_df['Team'] == team]['Active'].iloc[0].strip().lower() == 'active'
+                        if not is_active:
                             finalised_score += (penalty + bonus)
                         else:
                             projected_score += (penalty + bonus)
-                        if bonus == -1: perfect_picks += 1
+                        
+                        if bonus == -1:
+                            perfect_picks += 1
                 
                 leaderboard_data.append({
-                    "Oracle": sub[COL_NAME],
+                    "Oracle": sub['Oracle Name'],
                     "Finalised Score": finalised_score,
                     "Projected Score": projected_score,
                     "Total Penalty": finalised_score + projected_score,
@@ -178,17 +167,28 @@ try:
     with tab3:
         st.markdown("### Prophecy Matrix")
         if not submissions_df.empty:
-            COL_PREDS = sub_cols.get('rankings', 'Rankings')
-            COL_NAME = sub_cols.get('oracle name', 'Oracle Name')
             matrix_df = latest_subs.copy()
             for i in range(16):
-                matrix_df[f"#{i+1}"] = matrix_df[COL_PREDS].apply(lambda x: x.split(', ')[i] if len(x.split(', ')) > i else "")
-            st.dataframe(matrix_df.drop(columns=[sub_cols.get('timestamp'), COL_PREDS]))
+                matrix_df[f"#{i+1}"] = matrix_df['Rankings'].apply(lambda x: x.split(', ')[i] if len(x.split(', ')) > i else "")
+            st.dataframe(matrix_df.drop(columns=['Timestamp', 'Rankings']))
 
     with tab4:
         st.markdown("""
         ### The Oracle Protocol
-        The Oracle system uses **Golf Scoring** (Lowest Penalty Wins). Mistake multipliers apply to the top of your bracket, and a **-1 bonus** is awarded for every exact rank match.
+        The Oracle system uses **Golf Scoring** (Lowest Penalty Wins).
+        
+        #### 1. Distance Penalty
+        Penalty = |Predicted Rank - Actual Rank|
+        
+        #### 2. High-Stakes Multipliers
+        Mistakes at the top of your bracket are more costly:
+        - **1st Place Pick**: 4x Multiplier
+        - **2nd Place Pick**: 3x Multiplier
+        - **3rd/4th Place Pick**: 2x Multiplier
+        - **All others**: 1x Multiplier
+        
+        #### 3. Prophetic Deduction (The Bullseye)
+        If you predict a team's rank exactly, you receive a **-1 bonus** deduction from your total score.
         """)
 
 except Exception as e:
