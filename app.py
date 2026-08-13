@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import json
 
 # --- CONFIGURATION (LOCKED) ---
 GITHUB_USER = "Goosontheloose" 
@@ -38,20 +37,27 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # TAB LAYOUT
-tabs = st.tabs(["ðŸ“Š LIVE STANDINGS", "ðŸ† LEADERBOARD", "ðŸ§¬ PREDICTIONS", "ðŸ“œ SCORING LOGIC"])
+tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
+        # Convert Rank to numeric to ensure 1, 2, 3 order
+        results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
         sorted_results = results_df.sort_values("Rank")
+        
         for _, row in sorted_results.iterrows():
             t_name = str(row['Team'])
             t_rank = int(row['Rank'])
+            if t_rank == 0: continue # Skip teams with no rank yet
+            
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
+            
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
             card_text = "#991b1b" if t_status == "completed" else "#24292f"
+            
             st.markdown(f"""
                 <div style="display: flex; align-items: center; background: {card_bg}; 
                             margin-bottom: 8px; padding: 12px; border-radius: 8px; 
@@ -73,14 +79,15 @@ with tabs[1]:
         
         lb = []
         for _, row in clean_subs.iterrows():
-            preds = row['Rankings'].split(',')
+            preds = str(row['Rankings']).split(',')
             f_score, p_score = 0, 0
             f_perfect, p_perfect = 0, 0
             
             for i, team in enumerate(preds):
                 p_rank = i + 1
-                a_rank = int(actual_ranks.get(team, 0))
-                status_val = str(raw_statuses.get(team, 'Active')).strip().lower()
+                t_name = team.strip() # Removed leading/trailing spaces for matching
+                a_rank = int(float(actual_ranks.get(t_name, 0)))
+                status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
                 
                 if a_rank > 0:
                     m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
@@ -114,40 +121,41 @@ with tabs[1]:
         st.info("Awaiting data.")
 
 with tabs[2]:
-    st.subheader("Predictions")
+    st.subheader("Predictions Matrix")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
         for _, row in clean_subs.iterrows():
-            p = row['Rankings'].split(',')
+            p = str(row['Rankings']).split(',')
             d = {"Oracle": row['Oracle Name']}
-            for i, team in enumerate(p): d[f"#{i+1}"] = team
+            for i, team in enumerate(p): 
+                d[f"#{i+1}"] = team.strip()
             m_rows.append(d)
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
 with tabs[3]:
     st.subheader("The Rules (Scoring)")
     st.markdown("""
-    ### â›³ Golf Scoring Logic
+    ### ⛳ Golf Scoring Logic
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
     
-    ### ðŸŽ¯ Prophetic Deduction
+    ### 🎯 Prophetic Deduction
     A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
     *   **Distance Penalty = 0**
     *   **Bonus Deduction = -1 point**
     
-    ### ðŸ”¢ Penalty Multipliers
+    ### 🔢 Penalty Multipliers
     Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
     * **1st Place Pick:** 4x Multiplier  
     * **2nd Place Pick:** 3x Multiplier  
     * **3rd - 4th Place Pick:** 2x Multiplier  
     * **5th - 16th Place Pick:** 1x Multiplier
     
-    ### ðŸ§ª The Calculation
-    `(|Predicted Rank - Actual Rank| Ã— Multiplier) + Bonus = Team Score`
+    ### 🧪 The Calculation
+    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
     
     **Example:**  
     You predict Team X at **#1** (4x Multiplier).  
-    * If they finish **#1**: `(0 Ã— 4) + (-1) = -1 point`  
-    * If they finish **#3**: `(2 Ã— 4) + (0) = 8 points`
+    * If they finish **#1**: `(0 × 4) + (-1) = -1 point`  
+    * If they finish **#3**: `(2 × 4) + (0) = 8 points`
     """)
