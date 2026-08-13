@@ -23,7 +23,7 @@ def run_silent_arbiter():
         # 1. Check if we should sync (30 min throttle)
         meta = conn.read(worksheet="Metadata", ttl=0)
         last_update = datetime.strptime(meta.iloc[0, 0], "%Y-%m-%d %H:%M:%S")
-        if datetime.now() < last_update + timedelta(minutes=30):
+        if datetime.now() < last_update + timedelta(minutes=5):
             return # Skip sync
     except:
         pass # If Metadata fails, attempt one sync anyway
