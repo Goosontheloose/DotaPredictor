@@ -17,6 +17,7 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- THE SILENT ARBITER ---
 def run_silent_arbiter():
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -24,37 +25,32 @@ def run_silent_arbiter():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         live_ranks = {}
-        # Find all rows in group tables
         rows = soup.find_all('tr')
         for row in rows:
             t_cell = row.find('span', class_='team-template-text')
             if t_cell:
-                team_name = t_cell.get_text().strip()
-                # The rank is usually the first td in the same row
+                team_name = t_cell.get_text().strip().lower()
                 cells = row.find_all(['td', 'th'])
                 if cells:
                     rank_val = cells[0].get_text().strip().replace('#', '')
                     if rank_val.isdigit():
-                        live_ranks[team_name.lower()] = rank_val
+                        live_ranks[team_name] = rank_val
 
-        # Update Results Sheet
         res_df = conn.read(worksheet="Results", ttl=0)
         if not res_df.empty:
             updated = False
             for idx, row in res_df.iterrows():
                 sheet_name = str(row['Team']).strip().lower()
-                # Match "Team Falcons" to "Team Falcons"
                 if sheet_name in live_ranks:
                     res_df.at[idx, 'Rank'] = live_ranks[sheet_name]
                     updated = True
             
             if updated:
                 conn.update(worksheet="Results", data=res_df)
-    except Exception as e:
-        # st.error(f"Sync Error: {e}") # Uncomment this line if it still doesn't update to see why
+    except:
         pass
 
-# Run sync on every refresh for now to verify it works
+# Execute Arbiter
 run_silent_arbiter()
 
 @st.cache_data(ttl=5)
@@ -68,8 +64,8 @@ def load_data():
 
 results_df, subs_df = load_data()
 
-def get_logo_url(name):
-    return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
+# --- LOGO HELPER ---
+def get_logo_"
 
 # --- HEADER (Fixed aegis.png) ---
 st.markdown(f"""
@@ -79,12 +75,12 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
+# --- TABS ---
 tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
-        # Fill empty ranks with 0 so they don't break sorting
         results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
         sorted_results = results_df.sort_values("Rank")
         for _, row in sorted_results.iterrows():
@@ -92,10 +88,8 @@ with tabs[0]:
             t_rank = int(row['Rank'])
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
-            
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
-            
             st.markdown(f"""
                 <div style="display: flex; align-items: center; background: {card_bg}; 
                             margin-bottom: 8px; padding: 12px; border-radius: 8px; 
@@ -105,66 +99,5 @@ with tabs[0]:
                     <span style="font-weight: 600;">{t_name}</span>
                 </div>
             """, unsafe_allow_html=True)
-
-with tabs[1](https://liquipedia.net/simracing/Liquipedia:Team_templates "inline-citation"):
-    st.subheader("Leaderboard Standings")
-    if not subs_df.empty and not results_df.empty:
-        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
-        raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
-        
-        lb = []
-        for _, row in clean_subs.iterrows():
-            preds = str(row['Rankings']).split(',')
-            f_score, p_score = 0, 0
-            f_perfect, p_perfect = 0, 0
-            
-            for i, team in enumerate(preds):
-                p_rank = i + 1
-                team_name = team.strip()
-                a_rank = int(float(actual_ranks.get(team_name, 0)))
-                status_val = str(raw_statuses.get(team_name, 'Active')).strip().lower()
-                
-                if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3](https://liquipedia.net/dota2/Template:GroupTableLeague "inline-citation")[4](https://liquipedia.net/dota2/Template:GroupTableStart "inline-citation") else 1
-                    penalty = abs(p_rank - a_rank) * m
-                    bonus = -1 if p_rank == a_rank else 0
-                    team_total = penalty + bonus
-                    
-                    p_score += team_total
-                    if p_rank == a_rank: p_perfect += 1
-                        
-                    if status_val == 'completed':
-                        f_score += team_total
-                        if p_rank == a_rank: f_perfect += 1
-            
-            lb.append({
-                "Oracle": row['Oracle Name'], 
-                "Finalised Score": int(f_score),
-                "Perfect (Finalised)": f_perfect,
-                "Projected Score": int(p_score),
-                "Perfect (Projected)": p_perfect
-            })
-        
-        df_lb = pd.DataFrame(lb).sort_values(["Finalised Score", "Perfect (Finalised)", "Projected Score"])
-        st.dataframe(df_lb, hide_index=True, use_container_width=True)
-
-with tabs[2](https://liquipedia.net/dota2/Liquipedia:Team_Templates "inline-citation"):
-    st.subheader("Predictions Matrix")
-    if not subs_df.empty:
-        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        m_rows = []
-        for _, row in clean_subs.iterrows():
-            p = str(row['Rankings']).split(',')
-            d = {"Oracle": row['Oracle Name']}
-            for i, team in enumerate(p): d[f"#{i+1}"] = team
-            m_rows.append(d)
-        st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
-
-with tabs[3](https://liquipedia.net/dota2/Template:GroupTableLeague "inline-citation"):
-    st.subheader("Scoring Protocol")
-    st.markdown("""
-    - **Golf Scoring:** Lowest score wins.
-    - **Multipliers:** 1st(4x), 2nd(3x), 3rd/4th(2x), others(1x).
-    - **Prophetic Deduction:** -1 bonus point for each perfect rank prediction.
-    """)
+    else:
+        st.info("Awaiting tournament
