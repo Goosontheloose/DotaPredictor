@@ -1,19 +1,29 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
+import streamlit.components.v1 as components
+import json
+from datetime import datetime
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (EXACT REVERT) ---
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
-GITHUB_BASE = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/"
 
-st.set_page_config(page_title="TI 2026", layout="centered")
+# These names match your GitHub filenames exactly.
+TEAMS = [
+    "Falcons", "LGD", "Iron Wing", "Nigma",
+    "BoomBoys", "OG", "Team Vision", "Resilience",
+    "Spirit", "Xtreme", "Liquid", "Vigi",
+    "Aurora", "GamerLegion", "Yandex", "Huligani"
+]
+
+st.set_page_config(page_title="AEGIS ORACLE 2026", layout="wide")
 
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=10)
 def load_data():
     try:
         res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
@@ -26,95 +36,128 @@ results_df, subs_df = load_data()
 
 # --- LOGO HELPER ---
 def get_logo_url(name):
-    # Uses exact name from sheet to match GitHub filenames
-    return f"{GITHUB_BASE}{name.strip().replace(' ', '%20')}.png"
+    return f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{BRANCH}/{name.replace(' ', '%20')}.png"
+
+# --- UNIFIED DRAG-AND-DROP COMPONENT ---
+def unified_prediction_ui(team_list):
+    items_json = json.dumps([{"name": t, "logo": get_logo_url(t)} for t in team_list])
+    
+    html_code = f"""
+    <div id="drag-container" style="font-family: sans-serif; max-width: 500px; background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <ul id="sortable-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script>
+        const teams = {items_json};
+        const listElement = document.getElementById('sortable-list');
+
+        function render() {{
+            listElement.innerHTML = '';
+            teams.forEach((team, index) => {{
+                const li = document.createElement('li');
+                li.setAttribute('data-id', team.name);
+                li.style = "display: flex; align-items: center; background: white; margin-bottom: 8px; padding: 10px; border-radius: 6px; border: 1px solid #eee; cursor: grab; box-shadow: 0 2px 4px rgba(0,0,0,0.05);";
+                li.innerHTML = `
+                    <span style="font-weight: bold; color: #00F5FF; width: 30px; font-family: monospace;">#${{index + 1}}</span>
+                    <img src="${{team.logo}}" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
+                    <span style="font-weight: 600; color: #111;">${{team.name}}</span>
+                `;
+                listElement.appendChild(li);
+            }});
+        }}
+
+        render();
+
+        const sortable = new Sortable(listElement, {{
+            animation: 150,
+            onEnd: function() {{
+                const newOrder = Array.from(listElement.children).map(li => li.getAttribute('data-id'));
+                window.parent.postMessage({{
+                    type: 'streamlit:setComponentValue',
+                    value: newOrder
+                }}, '*');
+                
+                Array.from(listElement.children).forEach((li, idx) => {{
+                    li.querySelector('span').innerText = '#' + (idx + 1);
+                }});
+            }}
+        }});
+        
+        const initialOrder = teams.map(t => t.name);
+        window.parent.postMessage({{type: 'streamlit:setComponentValue', value: initialOrder}}, '*');
+    </script>
+    """
+    return components.html(html_code, height=950)
 
 # --- HEADER ---
-st.markdown(f"""
-    <div style="text-align: center; padding: 20px;">
-        <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">The International Predictions 2026</h1>
-    </div>
-""", unsafe_allow_html=True)
+st.title("AEGIS ORACLE: SHANGHAI 2026")
 
 # --- TABS ---
-tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
+tabs = st.tabs(["🔮 LOCK-IN", "📊 LEADERBOARD", "🧬 MATRIX", "📜 PROTOCOL"])
 
 with tabs[0]:
-    st.subheader("Official Tournament Standings")
-    if not results_df.empty:
-        results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
-        sorted_results = results_df.sort_values("Rank")
-        
-        for _, row in sorted_results.iterrows():
-            t_name = str(row['Team']).strip()
-            t_rank = int(row['Rank'])
-            if t_rank == 0: continue 
-            
-            t_status = str(row.get('Status', 'Active')).strip().lower()
-            t_logo = get_logo_url(t_name)
-            
-            card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
-            card_border = "#ef4444" if t_status == "completed" else "#eee"
-            card_text = "#991b1b" if t_status == "completed" else "#24292f"
-            
-            st.markdown(f"""
-                <div style="display: flex; align-items: center; background: {card_bg}; 
-                            margin-bottom: 8px; padding: 12px; border-radius: 8px; 
-                            border: 1px solid {card_border}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <span style="font-weight: bold; color: #57606a; width: 35px; font-family: monospace; font-size: 14px;">#{t_rank}</span>
-                    <img src="{t_logo}" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
-                    <span style="font-weight: 600; color: {card_text}; font-size: 16px;">{t_name}</span>
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Awaiting manual ranking data from the Arbiter.")
+    oracle_name = st.text_input("Oracle Name", placeholder="Your name...")
+    current_order = unified_prediction_ui(TEAMS)
+    
+    if st.button("LOCK IN PROPHECY", type="primary", use_container_width=True):
+        if not oracle_name:
+            st.error("Please enter an Oracle Name.")
+        elif not isinstance(current_order, list):
+            st.warning("Please interact with the list to confirm the order.")
+        else:
+            try:
+                new_entry = pd.DataFrame([{
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Oracle Name": oracle_name,
+                    "Rankings": ",".join(current_order)
+                }])
+                
+                updated_df = pd.concat([subs_df, new_entry], ignore_index=True)
+                conn.update(worksheet="Submissions", data=updated_df)
+                
+                st.success(f"Prophecy locked for {oracle_name}!")
+                st.balloons()
+                st.cache_data.clear()
+            except Exception as e:
+                st.error(f"Write failed: {e}")
 
 with tabs[1]:
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
+        # Filter latest prophecy per user
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        actual_ranks = dict(zip(results_df['Team'].str.strip(), results_df['Rank']))
-        raw_statuses = dict(zip(results_df['Team'].str.strip(), results_df.get('Status', ['Active']*len(results_df))))
+        actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
         
         lb = []
         for _, row in clean_subs.iterrows():
-            preds = str(row['Rankings']).split(',')
-            f_score, p_score = 0, 0
-            f_perfect, p_perfect = 0, 0
-            
+            preds = row['Rankings'].split(',')
+            score, perf = 0, 0
             for i, team in enumerate(preds):
                 p_rank = i + 1
-                t_name = team.strip()
-                a_rank = int(float(actual_ranks.get(t_name, 0)))
-                status_val = str(raw_statuses.get(t_name, 'Active')).strip().lower()
+                a_rank = int(float(actual_ranks.get(team.strip(), 0)))
                 
                 if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    # Multipliers: #1=4x, #2=3x, #3-4=2x, rest=1x
+                    m = 4 if p_rank == 1 else 3 if p_rank == 2 else 2 if p_rank in [3, 4] else 1
                     penalty = abs(p_rank - a_rank) * m
-                    bonus = -1 if p_rank == a_rank else 0
-                    team_total = penalty + bonus
                     
-                    p_score += team_total
-                    if p_rank == a_rank: p_perfect += 1
-                        
-                    if status_val == 'completed':
-                        f_score += team_total
-                        if p_rank == a_rank: f_perfect += 1
+                    # Prophetic Deduction: -1 for exact match
+                    bonus = -1 if p_rank == a_rank else 0
+                    
+                    score += (penalty + bonus)
+                    if p_rank == a_rank:
+                        perf += 1
             
             lb.append({
                 "Oracle": row['Oracle Name'], 
-                "Finalised Score": int(f_score),
-                "Perfect (Finalised)": f_perfect,
-                "Projected Score": int(p_score),
-                "Perfect (Projected)": p_perfect
+                "Penalty Score": int(score), 
+                "Perfect Picks": perf
             })
         
-        df_lb = pd.DataFrame(lb).sort_values(
-            ["Finalised Score", "Perfect (Finalised)", "Projected Score"], 
-            ascending=[True, False, True]
-        )
-        st.dataframe(df_lb, hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(lb).sort_values(["Penalty Score", "Perfect Picks"], ascending=[True, False]), hide_index=True, use_container_width=True)
+    else:
+        st.info("Leaderboard will update once manual results are entered in the sheet.")
 
 with tabs[2]:
     st.subheader("Predictions Matrix")
@@ -122,15 +165,13 @@ with tabs[2]:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
         for _, row in clean_subs.iterrows():
-            p = str(row['Rankings']).split(',')
+            p = row['Rankings'].split(',')
             d = {"Oracle": row['Oracle Name']}
-            for i, team in enumerate(p): 
-                d[f"#{i+1}"] = team.strip()
+            for i, team in enumerate(p): d[f"#{i+1}"] = team
             m_rows.append(d)
-        st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(m_rows), hide_index=True)
 
 with tabs[3]:
-    st.subheader("The Rules (Scoring)")
     st.markdown("""
     ### ⛳ Golf Scoring Logic
     The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
@@ -141,7 +182,7 @@ with tabs[3]:
     *   **Bonus Deduction = -1 point**
     
     ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
+    Penalties are weighted based on **your** predicted rank:
     * **1st Place Pick:** 4x Multiplier  
     * **2nd Place Pick:** 3x Multiplier  
     * **3rd - 4th Place Pick:** 2x Multiplier  
@@ -149,9 +190,4 @@ with tabs[3]:
     
     ### 🧪 The Calculation
     `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
-    
-    **Example:**  
-    You predict Team X at **#1** (4x Multiplier).  
-    * If they finish **#1**: `(0 × 4) + (-1) = -1 point`  
-    * If they finish **#3**: `(2 × 4) + (0) = 8 points`
     """)
