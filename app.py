@@ -3,9 +3,9 @@ import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# --- CONFIGURATION (LOCKED) ---
+# --- CONFIGURATION ---
 GITHUB_USER = "Goosontheloose" 
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
@@ -17,55 +17,47 @@ st.set_page_config(page_title="TI 2026", layout="centered")
 # --- DATABASE CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- THE SILENT ARBITER (AUTOMATED SYNC) ---
 def run_silent_arbiter():
     try:
-        # 1. Check if we should sync (30 min throttle)
-        meta = conn.read(worksheet="Metadata", ttl=0)
-        last_update = datetime.strptime(meta.iloc[0, 0], "%Y-%m-%d %H:%M:%S")
-        if datetime.now() < last_update + timedelta(minutes=5):
-            return # Skip sync
-    except:
-        pass # If Metadata fails, attempt one sync anyway
-
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(LIQUIPEDIA_URL, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Scrape ranks from standard Liquipedia 'grouptable'
         live_ranks = {}
-        tables = soup.find_all('table', class_='grouptable')
-        for table in tables:
-            rows = table.find_all('tr')[1:] # Skip header
-            for row in rows:
-                r_cell = row.find('td', class_='grouptable-rank')
-                t_cell = row.find('span', class_='team-template-text')
-                if r_cell and t_cell:
-                    live_ranks[t_cell.text.strip()] = r_cell.text.strip()
+        # Find all rows in group tables
+        rows = soup.find_all('tr')
+        for row in rows:
+            t_cell = row.find('span', class_='team-template-text')
+            if t_cell:
+                team_name = t_cell.get_text().strip()
+                # The rank is usually the first td in the same row
+                cells = row.find_all(['td', 'th'])
+                if cells:
+                    rank_val = cells[0].get_text().strip().replace('#', '')
+                    if rank_val.isdigit():
+                        live_ranks[team_name.lower()] = rank_val
 
-        # 2. Update the Results Sheet
+        # Update Results Sheet
         res_df = conn.read(worksheet="Results", ttl=0)
         if not res_df.empty:
             updated = False
             for idx, row in res_df.iterrows():
-                team_name = str(row['Team']).strip()
-                if team_name in live_ranks:
-                    res_df.at[idx, 'Rank'] = live_ranks[team_name]
+                sheet_name = str(row['Team']).strip().lower()
+                # Match "Team Falcons" to "Team Falcons"
+                if sheet_name in live_ranks:
+                    res_df.at[idx, 'Rank'] = live_ranks[sheet_name]
                     updated = True
             
             if updated:
                 conn.update(worksheet="Results", data=res_df)
-                # Update the Timestamp in Metadata
-                new_ts = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d %H:%M:%S")]], columns=["LastUpdate"])
-                conn.update(worksheet="Metadata", data=new_ts)
-    except:
-        pass # Fail silently to keep app running
+    except Exception as e:
+        # st.error(f"Sync Error: {e}") # Uncomment this line if it still doesn't update to see why
+        pass
 
-# Execute the Arbiter
+# Run sync on every refresh for now to verify it works
 run_silent_arbiter()
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def load_data():
     try:
         res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
@@ -76,24 +68,23 @@ def load_data():
 
 results_df, subs_df = load_data()
 
-# --- LOGO HELPER ---
 def get_logo_url(name):
     return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
 
-# --- HEADER ---
+# --- HEADER (Fixed aegis.png) ---
 st.markdown(f"""
     <div style="text-align: center; padding: 20px;">
-        <img src="{GITHUB_BASE}Aegis.png" width="80">
+        <img src="{GITHUB_BASE}aegis.png" width="80">
         <h1 style="margin-top: 10px; color: #1a1a1a; letter-spacing: -1px;">The International Predictions 2026</h1>
     </div>
 """, unsafe_allow_html=True)
 
-# TAB LAYOUT
 tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
 
 with tabs[0]:
     st.subheader("Official Tournament Standings")
     if not results_df.empty:
+        # Fill empty ranks with 0 so they don't break sorting
         results_df['Rank'] = pd.to_numeric(results_df['Rank'], errors='coerce').fillna(0)
         sorted_results = results_df.sort_values("Rank")
         for _, row in sorted_results.iterrows():
@@ -101,22 +92,21 @@ with tabs[0]:
             t_rank = int(row['Rank'])
             t_status = str(row.get('Status', 'Active')).strip().lower()
             t_logo = get_logo_url(t_name)
+            
             card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
             card_border = "#ef4444" if t_status == "completed" else "#eee"
-            card_text = "#991b1b" if t_status == "completed" else "#24292f"
+            
             st.markdown(f"""
                 <div style="display: flex; align-items: center; background: {card_bg}; 
                             margin-bottom: 8px; padding: 12px; border-radius: 8px; 
-                            border: 1px solid {card_border}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <span style="font-weight: bold; color: #57606a; width: 35px; font-family: monospace; font-size: 14px;">#{t_rank}</span>
+                            border: 1px solid {card_border};">
+                    <span style="font-weight: bold; color: #57606a; width: 35px;">#{t_rank}</span>
                     <img src="{t_logo}" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
-                    <span style="font-weight: 600; color: {card_text}; font-size: 16px;">{t_name}</span>
+                    <span style="font-weight: 600;">{t_name}</span>
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.info("Awaiting tournament data.")
 
-with tabs[1]:
+with tabs[1](https://liquipedia.net/simracing/Liquipedia:Team_templates "inline-citation"):
     st.subheader("Leaderboard Standings")
     if not subs_df.empty and not results_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
@@ -125,23 +115,22 @@ with tabs[1]:
         
         lb = []
         for _, row in clean_subs.iterrows():
-            preds = row['Rankings'].split(',')
+            preds = str(row['Rankings']).split(',')
             f_score, p_score = 0, 0
             f_perfect, p_perfect = 0, 0
             
             for i, team in enumerate(preds):
                 p_rank = i + 1
-                a_rank = int(actual_ranks.get(team.strip(), 0))
-                status_val = str(raw_statuses.get(team.strip(), 'Active')).strip().lower()
+                team_name = team.strip()
+                a_rank = int(float(actual_ranks.get(team_name, 0)))
+                status_val = str(raw_statuses.get(team_name, 'Active')).strip().lower()
                 
                 if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
+                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3](https://liquipedia.net/dota2/Template:GroupTableLeague "inline-citation")[4](https://liquipedia.net/dota2/Template:GroupTableStart "inline-citation") else 1
                     penalty = abs(p_rank - a_rank) * m
-                    
-                    # PROPHETIC DEDUCTION
                     bonus = -1 if p_rank == a_rank else 0
-                    
                     team_total = penalty + bonus
+                    
                     p_score += team_total
                     if p_rank == a_rank: p_perfect += 1
                         
@@ -157,14 +146,11 @@ with tabs[1]:
                 "Perfect (Projected)": p_perfect
             })
         
-        df_lb = pd.DataFrame(lb).sort_values(
-            ["Finalised Score", "Perfect (Finalised)", "Projected Score"], 
-            ascending=[True, False, True]
-        )
+        df_lb = pd.DataFrame(lb).sort_values(["Finalised Score", "Perfect (Finalised)", "Projected Score"])
         st.dataframe(df_lb, hide_index=True, use_container_width=True)
 
-with tabs[2]:
-    st.subheader("Predictions")
+with tabs[2](https://liquipedia.net/dota2/Liquipedia:Team_Templates "inline-citation"):
+    st.subheader("Predictions Matrix")
     if not subs_df.empty:
         clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
         m_rows = []
@@ -175,24 +161,10 @@ with tabs[2]:
             m_rows.append(d)
         st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
 
-with tabs[3]:
-    st.subheader("The Rules (Scoring)")
+with tabs[3](https://liquipedia.net/dota2/Template:GroupTableLeague "inline-citation"):
+    st.subheader("Scoring Protocol")
     st.markdown("""
-    ### ⛳ Golf Scoring Logic
-    The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
-    
-    ### 🎯 Prophetic Deduction
-    A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
-    *   **Distance Penalty = 0**
-    *   **Bonus Deduction = -1 point**
-    
-    ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
-    * **1st Place Pick:** 4x Multiplier  
-    * **2nd Place Pick:** 3x Multiplier  
-    * **3rd - 4th Place Pick:** 2x Multiplier  
-    * **5th - 16th Place Pick:** 1x Multiplier
-    
-    ### 🧪 The Calculation
-    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
+    - **Golf Scoring:** Lowest score wins.
+    - **Multipliers:** 1st(4x), 2nd(3x), 3rd/4th(2x), others(1x).
+    - **Prophetic Deduction:** -1 bonus point for each perfect rank prediction.
     """)
