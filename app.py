@@ -1,153 +1,209 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import json
 
-# --- CONFIGURATION (LOCKED) ---
-GITHUB_USER = "Goosontheloose" 
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="The International Predictions", layout="wide")
+
+# --- CSS STYLING (CLEAN SAAS / GITHUB LIGHT) ---
+st.markdown("""
+    <style>
+    .main { background-color: #f6f8fa; color: #24292f; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #ffffff;
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+        color: #57606a;
+        padding: 10px 20px;
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #0969da !important; 
+        color: #ffffff !important; 
+        border-color: #0969da !important;
+    }
+    .team-card {
+        background: #ffffff;
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: 1px solid #d0d7de;
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .rank-badge {
+        background: #f6f8fa;
+        color: #24292f;
+        font-weight: bold;
+        min-width: 50px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        margin-right: 15px;
+        border: 1px solid #d0d7de;
+    }
+    .status-completed { border-left: 5px solid #cf222e; } 
+    .status-active { border-left: 5px solid #1a7f37; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- CONFIGURATION ---
+GITHUB_USER = "Goosontheloose"
 REPO_NAME = "DotaPredictor"
 BRANCH = "main"
 GITHUB_BASE = f"https://cdn.jsdelivr.net/gh/{GITHUB_USER}/{REPO_NAME}@{BRANCH}/"
 
-st.set_page_config(page_title="TI 2026", layout="centered")
+def get_logo_url(team_name):
+    if team_name == "Header": return f"{GITHUB_BASE}Aegis.png"
+    clean_name = team_name.replace(" ", "%20")
+    return f"{GITHUB_BASE}{clean_name}.png"
 
-# --- DATABASE CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-@st.cache_data(ttl=100)
+# --- DATA ENGINE ---
+@st.cache_data(ttl=300)
 def load_data():
-    try:
-        res = conn.read(worksheet="Results", ttl=0).dropna(how='all')
-        sub = conn.read(worksheet="Submissions", ttl=0).dropna(how='all')
-        return res, sub
-    except:
-        return pd.DataFrame(), pd.DataFrame()
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    res = conn.read(worksheet="Results")
+    sub = conn.read(worksheet="Submissions")
+    
+    # Normalize Data
+    res['Team'] = res['Team'].str.strip()
+    res['Status'] = res['Status'].str.strip().str.lower()
+    res['Rank'] = pd.to_numeric(res['Rank'])
+    
+    # Calculate Brackets for Tied Teams
+    # If 4 teams have Rank 9, bracket is 9 to (9+4-1) = 12
+    rank_counts = res['Rank'].value_counts().to_dict()
+    brackets = {}
+    for r, count in rank_counts.items():
+        if r > 0: # Only process teams with an assigned rank
+            brackets[r] = {
+                'min': int(r),
+                'max': int(r + count - 1)
+            }
+    return res, sub, brackets
 
-results_df, subs_df = load_data()
-
-# --- LOGO HELPER ---
-def get_logo_url(name):
-    return f"{GITHUB_BASE}{name.replace(' ', '%20')}.png"
+results_df, subs_df, brackets = load_data()
 
 # --- HEADER ---
-st.markdown(f"""
-    <div style="text-align: center; padding: 20px;">
-        <img src="{GITHUB_BASE}Aegis.png" width="80">
-        <h1 style="margin-top: 10px; color: #74b86c; letter-spacing: -1px;">The International Predictions 2026</h1>
-    </div>
-""", unsafe_allow_html=True)
+col_h1, col_h2 = st.columns([1, 5])
+with col_h1:
+    st.image(get_logo_url("Header"), width=100)
+with col_h2:
+    st.title("THE INTERNATIONAL PREDICTIONS 2026")
 
-# TAB LAYOUT
-tabs = st.tabs(["📊 LIVE STANDINGS", "🏆 LEADERBOARD", "🧬 PREDICTIONS", "📜 SCORING LOGIC"])
+tab1, tab2, tab3, tab4 = st.tabs(["LIVE STANDINGS", "LEADERBOARD", "PREDICTIONS MATRIX", "SCORING LOGIC"])
 
-with tabs[0]:
-    st.subheader("Official Tournament Standings")
+# --- TAB 1: LIVE STANDINGS ---
+with tab1:
     if not results_df.empty:
-        sorted_results = results_df.sort_values("Rank")
-        for _, row in sorted_results.iterrows():
-            t_name = str(row['Team'])
-            t_rank = int(row['Rank'])
-            t_status = str(row.get('Status', 'Active')).strip().lower()
-            t_logo = get_logo_url(t_name)
-            card_bg = "#fee2e2" if t_status == "completed" else "#ffffff"
-            card_border = "#ef4444" if t_status == "completed" else "#eee"
-            card_text = "#991b1b" if t_status == "completed" else "#24292f"
+        display_df = results_df[results_df['Rank'] > 0].sort_values(by="Rank")
+        for _, row in display_df.iterrows():
+            b = brackets.get(row['Rank'], {'min': row['Rank'], 'max': row['Rank']})
+            rank_display = f"{b['min']}-{b['max']}" if b['min'] != b['max'] else f"{int(b['min'])}"
+            style = "status-completed" if row['Status'] == "completed" else "status-active"
+            
             st.markdown(f"""
-                <div style="display: flex; align-items: center; background: {card_bg}; 
-                            margin-bottom: 8px; padding: 12px; border-radius: 8px; 
-                            border: 1px solid {card_border}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <span style="font-weight: bold; color: #57606a; width: 35px; font-family: monospace; font-size: 14px;">#{t_rank}</span>
-                    <img src="{t_logo}" style="width: 28px; height: 28px; margin-right: 12px; object-fit: contain;">
-                    <span style="font-weight: 600; color: {card_text}; font-size: 16px;">{t_name}</span>
+                <div class="team-card {style}">
+                    <div class="rank-badge">#{rank_display}</div>
+                    <img src="{get_logo_url(row['Team'])}" width="30" style="margin-right:15px">
+                    <span style="font-weight:600;">{row['Team']}</span>
+                    <span style="margin-left:auto; color:#57606a; font-size:0.8em;">{row['Status'].upper()}</span>
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.info("Awaiting manual ranking data from the Arbiter.")
 
-with tabs[1]:
-    st.subheader("Leaderboard Standings")
+# --- TAB 2: LEADERBOARD ---
+with tab2:
     if not subs_df.empty and not results_df.empty:
-        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        actual_ranks = dict(zip(results_df['Team'], results_df['Rank']))
-        raw_statuses = dict(zip(results_df['Team'], results_df.get('Status', ['Active']*len(results_df))))
+        leaderboard = []
+        results_map = results_df.set_index('Team').to_dict('index')
         
-        lb = []
-        for _, row in clean_subs.iterrows():
-            preds = row['Rankings'].split(',')
+        for _, sub in subs_df.iterrows():
+            oracle = sub['Oracle Name']
+            ranks = [r.strip() for r in str(sub['Rankings']).split(',')]
+            
             f_score, p_score = 0, 0
             f_perfect, p_perfect = 0, 0
             
-            for i, team in enumerate(preds):
-                p_rank = i + 1
-                a_rank = int(actual_ranks.get(team, 0))
-                status_val = str(raw_statuses.get(team, 'Active')).strip().lower()
-                
-                if a_rank > 0:
-                    m = 4 if p_rank==1 else 3 if p_rank==2 else 2 if p_rank in [3,4] else 1
-                    penalty = abs(p_rank - a_rank) * m
+            for i, team in enumerate(ranks):
+                pred_slot = i + 1
+                if team in results_map:
+                    actual = results_map[team]
+                    if actual['Rank'] == 0: continue
                     
-                    # PROPHETIC DEDUCTION
-                    bonus = -1 if p_rank == a_rank else 0
+                    b = brackets.get(actual['Rank'])
                     
-                    team_total = penalty + bonus
-                    p_score += team_total
-                    if p_rank == a_rank: p_perfect += 1
-                        
-                    if status_val == 'completed':
-                        f_score += team_total
-                        if p_rank == a_rank: f_perfect += 1
+                    # TIER LOGIC: 0 penalty if within bracket
+                    if b['min'] <= pred_slot <= b['max']:
+                        dist = 0
+                        is_bullseye = True
+                    else:
+                        # Distance to the nearest edge
+                        dist = min(abs(pred_slot - b['min']), abs(pred_slot - b['max']))
+                        is_bullseye = False
+                    
+                    # Multipliers
+                    mult = 4 if pred_slot == 1 else 3 if pred_slot == 2 else 2 if pred_slot in [3, 4] else 1
+                    penalty = (dist * mult)
+                    
+                    # Prophetic Deduction
+                    if is_bullseye: penalty -= 1
+                    
+                    if actual['Status'] == "completed":
+                        f_score += penalty
+                        if is_bullseye: f_perfect += 1
+                    else:
+                        p_score += penalty
+                        if is_bullseye: p_perfect += 1
             
-            lb.append({
-                "Oracle": row['Oracle Name'], 
-                "Finalised Score": int(f_score),
-                "Perfect (Finalised)": f_perfect,
-                "Projected Score": int(p_score),
-                "Perfect (Projected)": p_perfect
+            leaderboard.append({
+                "Oracle": oracle,
+                "Finalised Score": f_score,
+                "Perfect (F)": f_perfect,
+                "Projected Score": p_score,
+                "Perfect (P)": p_perfect
             })
-        
-        df_lb = pd.DataFrame(lb).sort_values(
-            ["Finalised Score", "Perfect (Finalised)", "Projected Score"], 
-            ascending=[True, False, True]
-        )
-        st.dataframe(df_lb, hide_index=True, use_container_width=True)
-    else:
-        st.info("Awaiting data.")
+            
+        ld_df = pd.DataFrame(leaderboard).sort_values(by=["Finalised Score", "Perfect (F)"], ascending=[True, False])
+        st.dataframe(ld_df, hide_index=True, use_container_width=True)
 
-with tabs[2]:
-    st.subheader("Predictions")
+# --- TAB 3: MATRIX ---
+with tab3:
     if not subs_df.empty:
-        clean_subs = subs_df.sort_values("Timestamp").drop_duplicates("Oracle Name", keep="last")
-        m_rows = []
-        for _, row in clean_subs.iterrows():
-            p = row['Rankings'].split(',')
-            d = {"Oracle": row['Oracle Name']}
-            for i, team in enumerate(p): d[f"#{i+1}"] = team
-            m_rows.append(d)
-        st.dataframe(pd.DataFrame(m_rows), hide_index=True, use_container_width=True)
+        matrix_data = []
+        for _, row in subs_df.iterrows():
+            ranks = [r.strip() for r in str(row['Rankings']).split(',')]
+            matrix_data.append([row['Oracle Name']] + ranks)
+        
+        m_cols = ["Oracle"] + [f"#{i+1}" for i in range(16)]
+        m_df = pd.DataFrame(matrix_data, columns=m_cols)
+        st.dataframe(m_df, hide_index=True)
 
-with tabs[3]:
-    st.subheader("The Rules (Scoring)")
+# --- TAB 4: LOGIC ---
+with tab4:
     st.markdown("""
-    ### ⛳ Golf Scoring Logic
-    The goal is the **lowest penalty score**. The closer your prediction is to the actual result, the fewer points you receive.
+    ### THE ORACLE PROTOCOL
     
-    ### 🎯 Prophetic Deduction
-    A perfect prediction (Bullseye) is rewarded with a point deduction. If your predicted rank matches the actual rank exactly:
-    *   **Distance Penalty = 0**
-    *   **Bonus Deduction = -1 point**
+    **1. Tiered Ranking (The Bracket Rule)**
+    If teams are tied in a bracket (e.g., 5th-6th or 9th-12th), any prediction that falls **anywhere** within that range is considered a perfect prediction.
+    *   **Distance:** 0
+    *   **Penalty:** 0
+    *   **Bonus:** -1 Prophetic Deduction
     
-    ### 🔢 Penalty Multipliers
-    Accuracy at the top of the bracket is critical. Penalties are weighted based on **your** predicted rank:
-    * **1st Place Pick:** 4x Multiplier  
-    * **2nd Place Pick:** 3x Multiplier  
-    * **3rd - 4th Place Pick:** 2x Multiplier  
-    * **5th - 16th Place Pick:** 1x Multiplier
+    **2. Distance Penalties**
+    If your prediction falls outside the bracket, the distance is calculated from your slot to the **nearest edge** of the finished bracket.
+    *   *Example:* Team finishes 9th-12th. You predicted them at 14th. 
+    *   *Math:* Distance = 2 (14 - 12).
     
-    ### 🧪 The Calculation
-    `(|Predicted Rank - Actual Rank| × Multiplier) + Bonus = Team Score`
+    **3. Multipliers**
+    The stakes are higher for your top picks:
+    *   Predicted 1st: **4x Penalty**
+    *   Predicted 2nd: **3x Penalty**
+    *   Predicted 3rd-4th: **2x Penalty**
+    *   All others: **1x Penalty**
     
-    **Example:**  
-    You predict Team X at **#1** (4x Multiplier).  
-    * If they finish **#1**: `(0 × 4) + (-1) = -1 point`  
-    * If they finish **#3**: `(2 × 4) + (0) = 8 points`
+    **4. Prophetic Deduction**
+    Every "Bullseye" (predicting a team within their finishing bracket) grants a **-1 point bonus** to your total score.
     """)
