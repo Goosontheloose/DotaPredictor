@@ -74,11 +74,10 @@ def load_data():
     res['Rank'] = pd.to_numeric(res['Rank'])
     
     # Calculate Brackets for Tied Teams
-    # If 4 teams have Rank 9, bracket is 9 to (9+4-1) = 12
     rank_counts = res['Rank'].value_counts().to_dict()
     brackets = {}
     for r, count in rank_counts.items():
-        if r > 0: # Only process teams with an assigned rank
+        if r > 0:
             brackets[r] = {
                 'min': int(r),
                 'max': int(r + count - 1)
@@ -124,8 +123,10 @@ with tab2:
             oracle = sub['Oracle Name']
             ranks = [r.strip() for r in str(sub['Rankings']).split(',')]
             
-            f_score, p_score = 0, 0
-            f_perfect, p_perfect = 0, 0
+            f_score = 0  # Points from completed teams
+            active_penalties = 0  # Points from current standing of active teams
+            f_perfect = 0
+            p_perfect = 0
             
             for i, team in enumerate(ranks):
                 pred_slot = i + 1
@@ -140,33 +141,34 @@ with tab2:
                         dist = 0
                         is_bullseye = True
                     else:
-                        # Distance to the nearest edge
                         dist = min(abs(pred_slot - b['min']), abs(pred_slot - b['max']))
                         is_bullseye = False
                     
                     # Multipliers
                     mult = 4 if pred_slot == 1 else 3 if pred_slot == 2 else 2 if pred_slot in [3, 4] else 1
                     penalty = (dist * mult)
-                    
-                    # Prophetic Deduction
                     if is_bullseye: penalty -= 1
                     
                     if actual['Status'] == "completed":
                         f_score += penalty
                         if is_bullseye: f_perfect += 1
+                        p_perfect += 1 # A finalised bullseye is still a bullseye for projected total
                     else:
-                        p_score += penalty
+                        active_penalties += penalty
                         if is_bullseye: p_perfect += 1
+            
+            # PROJECTED SCORE = Finalised + Active Penalties
+            projected_total = f_score + active_penalties
             
             leaderboard.append({
                 "Oracle": oracle,
                 "Finalised Score": f_score,
                 "Perfect (F)": f_perfect,
-                "Projected Score": p_score,
+                "Projected Score": projected_total,
                 "Perfect (P)": p_perfect
             })
             
-        ld_df = pd.DataFrame(leaderboard).sort_values(by=["Finalised Score", "Perfect (F)"], ascending=[True, False])
+        ld_df = pd.DataFrame(leaderboard).sort_values(by=["Finalised Score", "Perfect (F)", "Projected Score"], ascending=[True, False, True])
         st.dataframe(ld_df, hide_index=True, use_container_width=True)
 
 # --- TAB 3: MATRIX ---
@@ -194,16 +196,11 @@ with tab4:
     
     **2. Distance Penalties**
     If your prediction falls outside the bracket, the distance is calculated from your slot to the **nearest edge** of the finished bracket.
-    *   *Example:* Team finishes 9th-12th. You predicted them at 14th. 
-    *   *Math:* Distance = 2 (14 - 12).
     
     **3. Multipliers**
     The stakes are higher for your top picks:
-    *   Predicted 1st: **4x Penalty**
-    *   Predicted 2nd: **3x Penalty**
-    *   Predicted 3rd-4th: **2x Penalty**
-    *   All others: **1x Penalty**
+    *   Predicted 1st: **4x Penalty** | 2nd: **3x Penalty** | 3rd-4th: **2x Penalty**
     
-    **4. Prophetic Deduction**
-    Every "Bullseye" (predicting a team within their finishing bracket) grants a **-1 point bonus** to your total score.
+    **4. Projected Score**
+    This is the sum of your **Finalised Score** plus the current penalties from **Active** teams. It shows where you will finish if the standings don't change.
     """)
