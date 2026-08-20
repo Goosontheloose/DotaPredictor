@@ -148,7 +148,7 @@ with tab2:
                     penalty = (dist * mult)
                     if is_bullseye: penalty -= 1
                     
-                                       if actual['Status'] == "completed":
+                    if actual['Status'] == "completed":
                         f_score += penalty
                         if is_bullseye:
                             f_perfect += 1
