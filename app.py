@@ -148,10 +148,11 @@ with tab2:
                     penalty = (dist * mult)
                     if is_bullseye: penalty -= 1
                     
-                    if actual['Status'] == "completed":
+                                       if actual['Status'] == "completed":
                         f_score += penalty
-                        if is_bullseye: f_perfect += 1
-                        p_perfect += 1
+                        if is_bullseye:
+                            f_perfect += 1
+                            p_perfect += 1
                     else:
                         active_penalties += penalty
                         if is_bullseye: p_perfect += 1
