@@ -151,12 +151,11 @@ with tab2:
                     if actual['Status'] == "completed":
                         f_score += penalty
                         if is_bullseye: f_perfect += 1
-                        p_perfect += 1 # A finalised bullseye is still a bullseye for projected total
+                        p_perfect += 1
                     else:
                         active_penalties += penalty
                         if is_bullseye: p_perfect += 1
             
-            # PROJECTED SCORE = Finalised + Active Penalties
             projected_total = f_score + active_penalties
             
             leaderboard.append({
@@ -167,14 +166,14 @@ with tab2:
                 "Perfect (P)": p_perfect
             })
             
-      ld_df = pd.DataFrame(leaderboard).sort_values(
-    by=["Finalised Score", "Perfect (F)", "Projected Score"], 
-    ascending=[True, False, True]
-).reset_index(drop=True)
-
-ld_df.insert(0, "Rank", ld_df["Finalised Score"].rank(method="min", ascending=True).astype(int))
-
-st.dataframe(ld_df, hide_index=True, use_container_width=True)
+        ld_df = pd.DataFrame(leaderboard).sort_values(
+            by=["Finalised Score", "Perfect (F)", "Projected Score"], 
+            ascending=[True, False, True]
+        ).reset_index(drop=True)
+        
+        ld_df.insert(0, "Rank", ld_df.index + 1)
+        
+        st.dataframe(ld_df, hide_index=True, use_container_width=True)
 # --- TAB 3: MATRIX ---
 with tab3:
     if not subs_df.empty:
