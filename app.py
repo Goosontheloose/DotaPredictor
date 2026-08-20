@@ -65,9 +65,8 @@ def get_logo_url(team_name):
 @st.cache_data(ttl=30)
 def load_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
-    res = conn.read(worksheet="Results")
-    sub = conn.read(worksheet="Submissions")
-    
+    res = conn.read(worksheet="Results", ttl=30)
+    sub = conn.read(worksheet="Submissions", ttl=30)
     # Normalize Data
     res['Team'] = res['Team'].str.strip()
     res['Status'] = res['Status'].str.strip().str.lower()
