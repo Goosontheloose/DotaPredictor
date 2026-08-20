@@ -62,7 +62,7 @@ def get_logo_url(team_name):
     return f"{GITHUB_BASE}{clean_name}.png"
 
 # --- DATA ENGINE ---
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)
 def load_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
     res = conn.read(worksheet="Results")
