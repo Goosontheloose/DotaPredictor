@@ -167,9 +167,14 @@ with tab2:
                 "Perfect (P)": p_perfect
             })
             
-        ld_df = pd.DataFrame(leaderboard).sort_values(by=["Finalised Score", "Perfect (F)", "Projected Score"], ascending=[True, False, True])
-        st.dataframe(ld_df, hide_index=True, use_container_width=True)
+      ld_df = pd.DataFrame(leaderboard).sort_values(
+    by=["Finalised Score", "Perfect (F)", "Projected Score"], 
+    ascending=[True, False, True]
+).reset_index(drop=True)
 
+ld_df.insert(0, "Rank", ld_df["Finalised Score"].rank(method="min", ascending=True).astype(int))
+
+st.dataframe(ld_df, hide_index=True, use_container_width=True)
 # --- TAB 3: MATRIX ---
 with tab3:
     if not subs_df.empty:
